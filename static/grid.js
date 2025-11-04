@@ -116,11 +116,19 @@ function LoadGrid(data, html, focus, authorHue) {
 	return grid;
 }
 function ApplyGridUpdate(grid, data, authorHue) {
+	let dirty = false;
+
 	/* iterate over the cells and update them */
 	for (let y = 0; y < grid.height; ++y) {
 		for (let x = 0; x < grid.width; ++x) {
 			const next = data.grid[x + y * grid.width];
 			const cell = grid.mesh[x][y];
+
+			/* check if the current cell-state is newer */
+			if (next.time < cell.time) {
+				dirty = true;
+				continue;
+			}
 
 			/* copy the state over */
 			cell.solid = next.solid;
@@ -133,6 +141,7 @@ function ApplyGridUpdate(grid, data, authorHue) {
 
 	/* render the updated grid */
 	RenderGrid(grid, authorHue);
+	return dirty;
 }
 function RenderGrid(grid, authorHue) {
 	/* rule for digitization: if previous is solid or out of bounds, and next is not, add a digit (both for

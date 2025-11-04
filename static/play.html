@@ -157,7 +157,8 @@
 
 	_state.enter = function () {
 		/* validate the name */
-		const name = document.getElementById('name').value;
+		const name = document.getElementById('name').value.trim();
+		document.getElementById('name').value = name;
 		if (name.length == 0) {
 			document.getElementById('error').innerText = 'Name cannot be empty';
 			document.getElementById('error').classList.add('show');
@@ -282,9 +283,11 @@
 		if (_state.grid == null)
 			_state.grid = LoadGrid(data, content, _state.focus, _state.getAuthorHue);
 
-		/* update the grid data */
-		else
-			ApplyGridUpdate(_state.grid, data, _state.getAuthorHue);
+		/* update the grid data (and check if it still consideres the game dirty) */
+		else if (ApplyGridUpdate(_state.grid, data, _state.getAuthorHue)) {
+			_state.dirty = true;
+			_state.pushDirty();
+		}
 
 		/* update the view and focus */
 		_state.view.update(_state.grid);
