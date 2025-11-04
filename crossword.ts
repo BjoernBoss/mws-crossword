@@ -280,6 +280,7 @@ export class Crossword implements libCommon.ModuleInterface {
 	private fileGames: (path: string) => string;
 	private gameStates: Record<string, ActiveGame>;
 
+	public name: string = 'crossword';
 	constructor(dataPath: string) {
 		this.fileStatic = libLocation.MakeSelfPath(import.meta.url, '/static');
 		this.fileGames = libLocation.MakeLocation(dataPath);
