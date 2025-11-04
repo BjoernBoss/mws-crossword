@@ -32,19 +32,17 @@ interface GameState extends GameBoard {
 };
 
 class ActiveGame {
-	private ws: Record<number, { ws: libWs.WebSocket, name: string }>;
+	private ws: Map<libWs.WebSocket, string>;
 	private data: GameBoard | null;
 	private filePath: string;
 	private writebackFailed: boolean;
-	private nextId: number;
 	private queued: NodeJS.Timeout | null;
 
 	constructor(filePath: string) {
-		this.ws = {};
+		this.ws = new Map<libWs.WebSocket, string>();
 		this.data = null;
 		this.filePath = filePath;
 		this.writebackFailed = false;
-		this.nextId = 0;
 		this.queued = null;
 
 		/* fetch the initial data */
@@ -72,8 +70,8 @@ class ActiveGame {
 		/* collect the online names */
 		let online: Set<string> = new Set<string>();
 		let names: Set<string> = new Set<string>();
-		for (const id in this.ws) {
-			const name = this.ws[id].name;
+		for (const child of this.ws) {
+			const name = child[1];
 			if (name == '') continue;
 
 			/* add the name to the list of objects */
@@ -99,12 +97,12 @@ class ActiveGame {
 		const json = JSON.stringify(this.buildOutput());
 
 		/* send the data to all clients */
-		for (const id in this.ws)
-			this.ws[id].ws.send(json);
+		for (const child of this.ws)
+			child[0].send(json);
 	}
-	private notifySingleId(id: number): void {
+	private notifySingleId(ws: libWs.WebSocket): void {
 		const json = JSON.stringify(this.buildOutput());
-		this.ws[id].ws.send(json);
+		ws.send(json);
 	}
 	private queueWriteBack(): void {
 		if (this.data == null) return;
@@ -161,18 +159,18 @@ class ActiveGame {
 		this.writebackFailed = true;
 	}
 
-	public updateGrid(id: number, grid: any): void {
+	public updateGrid(client: libClient.HttpUpgrade, ws: libWs.WebSocket, grid: any): void {
 		/* ensure that a grid exists */
 		if (this.data == null) {
-			libLog.Log(`Discarding grid update for failed load [${this.filePath}]`);
-			this.notifySingle(id);
+			client.log(`Discarding grid update for failed load [${this.filePath}]`);
+			this.notifySingle(ws);
 			return;
 		}
 
 		/* ensure that the player has a name */
-		if (this.ws[id].name.length == 0) {
-			libLog.Log(`Discarding grid update of unnamed player [${this.filePath}]`);
-			this.notifySingle(id);
+		if (this.ws.get(ws)!.length == 0) {
+			client.log(`Discarding grid update of unnamed player [${this.filePath}]`);
+			this.notifySingle(ws);
 			return;
 		}
 
@@ -228,15 +226,15 @@ class ActiveGame {
 
 		/* check if the grid data are valid and otherwise notify the user */
 		if (!valid) {
-			libLog.Log(`Discarding invalid grid update [${this.filePath}]`);
-			this.notifySingle(id);
+			client.log(`Discarding invalid grid update [${this.filePath}]`);
+			this.notifySingle(ws);
 			return;
 		}
 
 		/* check if the data are not dirty */
 		if (!dirty) {
-			libLog.Log(`Discarding empty grid update of [${this.filePath}]`);
-			this.notifySingle(id);
+			client.log(`Discarding empty grid update of [${this.filePath}]`);
+			this.notifySingle(ws);
 			return;
 		}
 
@@ -245,21 +243,21 @@ class ActiveGame {
 		this.notifyAll();
 		this.queueWriteBack();
 	}
-	public updateName(id: number, name: string): void {
+	public updateName(ws: libWs.WebSocket, name: string): void {
 		name = name.slice(0, nameMaxLength + 1);
-		if (this.ws[id].name == name) return;
+		if (this.ws.get(ws) == name) return;
 
 		/* update the name and notify the other sockets */
-		this.ws[id].name = name;
+		this.ws.set(ws, name);
 		this.notifyAll();
 	}
-	public drop(id: number): boolean {
+	public drop(ws: libWs.WebSocket): boolean {
 		/* remove the web-socket from the open connections */
-		let name = this.ws[id].name;
-		delete this.ws[id];
+		let name = this.ws.get(ws)!;
+		this.ws.delete(ws);
 
 		/* check if this was the last listener and the object can be unloaded */
-		if (Object.keys(this.ws).length == 0) {
+		if (this.ws.size == 0) {
 			this.writeBack(true);
 			return false;
 		}
@@ -269,12 +267,11 @@ class ActiveGame {
 			this.notifyAll();
 		return true;
 	}
-	public register(ws: libWs.WebSocket): number {
-		this.ws[++this.nextId] = { ws: ws, name: '' };
-		return this.nextId;
+	public register(ws: libWs.WebSocket): void {
+		this.ws.set(ws, '');
 	}
-	public notifySingle(id: number): void {
-		this.notifySingleId(id);
+	public notifySingle(ws: libWs.WebSocket): void {
+		this.notifySingleId(ws);
 	}
 };
 
@@ -344,7 +341,7 @@ export class Application implements libCommon.AppInterface {
 			client.respondNotFound();
 			return;
 		}
-		libLog.Log(`Handling Game: [${name}] as [${method}]`);
+		client.log(`Handling Game: [${name}] as [${method}]`);
 		const filePath = this.fileGames(`${name}.json`);
 
 		/* check if the game is being removed */
@@ -377,7 +374,7 @@ export class Application implements libCommon.AppInterface {
 		client.receiveAllText(maxFileSize, client.getMediaTypeCharset('utf-8'), function (text, err) {
 			/* check if an error occurred */
 			if (err) {
-				libLog.Error(`Error occurred while posting to [${filePath}]: ${err.message}`);
+				client.error(`Error occurred while posting to [${filePath}]: ${err.message}`);
 				client.respondInternalError('Network issue regarding the post payload');
 				return;
 			}
@@ -387,7 +384,7 @@ export class Application implements libCommon.AppInterface {
 			try {
 				parsed = that.parseAndValidateGame(text!);
 			} catch (e: any) {
-				libLog.Error(`Error while parsing the game: ${e.message}`);
+				client.error(`Error while parsing the game: ${e.message}`);
 				client.respondBadRequest(e.message);
 				return;
 			}
@@ -397,7 +394,7 @@ export class Application implements libCommon.AppInterface {
 				libFs.writeFileSync(filePath, JSON.stringify(parsed), { encoding: 'utf-8', flag: 'wx' });
 			}
 			catch (e: any) {
-				libLog.Error(`Error while writing the game out: ${e.message}`);
+				client.error(`Error while writing the game out: ${e.message}`);
 				client.respondInternalError('File-System error storing the game');
 				return;
 			}
@@ -430,8 +427,8 @@ export class Application implements libCommon.AppInterface {
 		/* return them to the request */
 		client.respondJson(JSON.stringify(out));
 	}
-	private acceptWebSocket(ws: libWs.WebSocket, name: string): void {
-		libLog.Log(`Handling WebSocket to: [${name}]`);
+	private acceptWebSocket(client: libClient.HttpUpgrade, ws: libWs.WebSocket, name: string): void {
+		client.log(`Handling WebSocket to: [${name}]`);
 		const filePath = this.fileGames(`${name}.json`);
 
 		/* check if the game exists */
@@ -444,8 +441,8 @@ export class Application implements libCommon.AppInterface {
 		/* check if the game-state for the given name has already been set-up */
 		if (!(name in this.gameStates))
 			this.gameStates[name] = new ActiveGame(filePath);
-		const id = this.gameStates[name].register(ws);
-		libLog.Log(`Registered websocket to: [${name}] as [${id}]`);
+		this.gameStates[name].register(ws);
+		client.log(`Registered websocket to [${name}]`);
 
 		/* define the alive callback */
 		let isAlive = true, aliveInterval: NodeJS.Timeout | null = null;
@@ -475,11 +472,11 @@ export class Application implements libCommon.AppInterface {
 		let that = this;
 		ws.on('pong', () => queueAliveCheck(true));
 		ws.on('close', function () {
-			if (!that.gameStates[name].drop(id))
+			if (!that.gameStates[name].drop(ws))
 				delete that.gameStates[name];
 			if (aliveInterval != null)
 				clearTimeout(aliveInterval);
-			libLog.Log(`Socket [${id}] disconnected`);
+			client.log(`Socket disconnected`);
 		});
 		ws.on('message', function (data) {
 			queueAliveCheck(true);
@@ -487,25 +484,25 @@ export class Application implements libCommon.AppInterface {
 			/* parse the data */
 			try {
 				let parsed = JSON.parse(data.toString('utf-8'));
-				libLog.Log(`Received for socket [${id}]: ${parsed.cmd}`);
+				client.log(`Received for socket: ${parsed.cmd}`);
 
 				/* handle the command */
 				if (parsed.cmd == 'name' && typeof parsed.name == 'string')
-					that.gameStates[name].updateName(id, parsed.name);
+					that.gameStates[name].updateName(ws, parsed.name);
 				else if (parsed.cmd == 'update')
-					that.gameStates[name].updateGrid(id, parsed.data);
+					that.gameStates[name].updateGrid(client, ws, parsed.data);
 			} catch (e: any) {
-				libLog.Error(`Failed to parse web-socket response: ${e.message}`);
+				client.log(`Failed to parse web-socket response: ${e.message}`);
 				ws.close();
 			}
 		});
 
 		/* send the initial state to the socket */
-		this.gameStates[name].notifySingle(id);
+		this.gameStates[name].notifySingle(ws);
 	}
 
 	public request(client: libClient.HttpRequest): void {
-		libLog.Log(`Game handler for [${client.path}]`);
+		client.log(`Game handler for [${client.path}]`);
 
 		/* check if a game is being manipulated */
 		if (client.path.startsWith('/game/')) {
@@ -541,7 +538,7 @@ export class Application implements libCommon.AppInterface {
 		client.tryRespondFile(this.fileStatic(client.path));
 	}
 	public upgrade(client: libClient.HttpUpgrade): void {
-		libLog.Log(`Game handler for [${client.path}]`);
+		client.log(`Game handler for [${client.path}]`);
 
 		/* check if a web-socket is connecting */
 		if (!client.path.startsWith('/ws/')) {
@@ -552,10 +549,10 @@ export class Application implements libCommon.AppInterface {
 		/* extract the name and validate it */
 		let name = client.path.slice(4);
 		if (name.match(nameRegex) && name.length <= nameMaxLength) {
-			if (client.tryAcceptWebSocket((ws) => this.acceptWebSocket(ws, name)))
+			if (client.tryAcceptWebSocket((ws) => this.acceptWebSocket(client, ws, name)))
 				return;
 		}
-		libLog.Warning(`Invalid request for web-socket point for game [${name}]`);
+		client.log(`Invalid request for web-socket point for game [${name}]`);
 		client.respondNotFound();
 	}
 };
