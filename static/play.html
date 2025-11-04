@@ -25,7 +25,7 @@
 			</div>
 			<div id="error" class="error" style="margin: 0px 15px 15px 15px;">Error Message</div>
 			<div class="confirm">
-				<div class="button" style="width: 100px;" onclick="_state.enter()">Ok</div>
+				<div class="button" style="width: 100px;" onclick="_state.enter(false)">Ok</div>
 			</div>
 		</div>
 	</div>
@@ -76,7 +76,8 @@
 		players: {},
 		usedsHues: [],
 		view: null,
-		focus: null
+		focus: null,
+		configured: false
 	};
 
 	window.onload = function () {
@@ -153,31 +154,41 @@
 		document.getElementById(_state.focus.isHorizontal() ? 'horizontal' : 'vertical').classList.add('toggled');
 		if (!_state.focus.isCertain())
 			document.getElementById('guess').classList.add('toggled');
+
+		/* add a callback to be able to hide the name-input (thereby only viewing the game) */
+		document.getElementById('fetch-name').onclick = function (e) {
+			e.preventDefault();
+			_state.enter(true);
+		}
 	}
 
-	_state.enter = function () {
-		/* validate the name */
-		const name = document.getElementById('name').value.trim();
-		document.getElementById('name').value = name;
-		if (name.length == 0) {
-			document.getElementById('error').innerText = 'Name cannot be empty';
-			document.getElementById('error').classList.add('show');
+	_state.enter = function (passive) {
+		if (_state.configured)
 			return;
+		_state.configured = true;
+
+		/* validate the name */
+		if (!passive) {
+			const name = document.getElementById('name').value.trim();
+			document.getElementById('name').value = name;
+			if (name.length == 0) {
+				document.getElementById('error').innerText = 'Name cannot be empty';
+				document.getElementById('error').classList.add('show');
+				return;
+			}
+
+			/* update the name and write it to the cookie (lifetime = 24hrs) */
+			_state.name = name;
+			document.cookie = `crossword-last-name=${_state.name}; expires=${new Date(Date.now() + 24 * 60 * 60 * 1000).toUTCString()};`;
+
+			/* notify the socket about the available name */
+			if (_state.sock.connected())
+				_state.sock.send((send) => send({ cmd: 'name', name: _state.name }));
+
+			/* update the focus to use the proper name */
+			_state.focus.config(null, null, _state.name);
 		}
-
-		/* update the name */
-		_state.name = name;
 		document.getElementById('fetch-name').classList.remove('show');
-
-		/* write the last name as a cookie out (lifetime = 24hrs) */
-		document.cookie = `crossword-last-name=${_state.name}; expires=${new Date(Date.now() + 24 * 60 * 60 * 1000).toUTCString()};`;
-
-		/* notify the socket about the available name */
-		if (_state.sock.connected())
-			_state.sock.send((send) => send({ cmd: 'name', name: _state.name }));
-
-		/* update the focus to use the proper name */
-		_state.focus.config(null, null, _state.name);
 
 		/* register convenience handler (first after setting the name to prevent the input from being consumed) */
 		document.body.onkeydown = function (e) {

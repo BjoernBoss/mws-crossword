@@ -512,7 +512,7 @@ class GridFocus {
 	}
 	_write(c) {
 		const cell = this._grid.mesh[this._cell[0]][this._cell[1]];
-		if (c != '' && this._name == '')
+		if (this._name == '')
 			return;
 
 		/* update the cell content (only update the author, if the character is changed) */
@@ -608,12 +608,14 @@ class GridFocus {
 			this._focused(this._cell[0], this._cell[1], true);
 	}
 	config(horizontal, certain, name) {
+		if (name != null)
+			this._name = name;
+		if (this._name == '')
+			certain = null;
 		if (certain != null && this._certain != certain) {
 			this._certain = certain;
 			this._oncertain(this._certain);
 		}
-		if (name != null)
-			this._name = name;
 		if (horizontal != null)
 			this._updateHorizontal(horizontal);
 	}
