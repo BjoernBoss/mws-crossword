@@ -96,14 +96,14 @@ class ActiveGame {
 		return out;
 	}
 	private notifyAll(): void {
-		const json = Buffer.from(JSON.stringify(this.buildOutput()), 'utf-8');
+		const json = JSON.stringify(this.buildOutput());
 
 		/* send the data to all clients */
 		for (const id in this.ws)
 			this.ws[id].ws.send(json);
 	}
 	private notifySingleId(id: number): void {
-		const json = Buffer.from(JSON.stringify(this.buildOutput()), 'utf-8');
+		const json = JSON.stringify(this.buildOutput());
 		this.ws[id].ws.send(json);
 	}
 	private queueWriteBack(): void {
@@ -429,7 +429,7 @@ export class Application implements libCommon.AppInterface {
 
 		/* check if the game exists */
 		if (!libFs.existsSync(filePath)) {
-			ws.send(Buffer.from(JSON.stringify('unknown-game'), 'utf-8'));
+			ws.send(JSON.stringify('unknown-game'));
 			ws.close();
 			return;
 		}
