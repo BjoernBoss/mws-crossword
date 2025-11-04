@@ -275,13 +275,13 @@ class ActiveGame {
 	}
 };
 
-export class Application implements libCommon.AppInterface {
+export class Crossword implements libCommon.ModuleInterface {
 	private fileStatic: (path: string) => string;
 	private fileGames: (path: string) => string;
 	private gameStates: Record<string, ActiveGame>;
 
 	constructor(dataPath: string) {
-		this.fileStatic = libLocation.MakeAppPath(import.meta.url, '/static');
+		this.fileStatic = libLocation.MakeSelfPath(import.meta.url, '/static');
 		this.fileGames = libLocation.MakeLocation(dataPath);
 		this.gameStates = {};
 	}
