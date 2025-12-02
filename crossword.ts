@@ -425,7 +425,7 @@ export class Crossword implements libCommon.ModuleInterface {
 		}
 
 		/* return them to the request */
-		client.respondJson(JSON.stringify(out));
+		client.respondText(JSON.stringify(out), 'json');
 	}
 	private acceptWebSocket(client: libClient.ClientSocket, name: string): void {
 		client.log(`Handling WebSocket to: [${name}]`);
