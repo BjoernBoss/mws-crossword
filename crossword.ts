@@ -1,5 +1,5 @@
 /* SPDX-License-Identifier: BSD-3-Clause */
-/* Copyright (c) 2025 Bjoern Boss Henrichsen */
+/* Copyright (c) 2025-2026 Bjoern Boss Henrichsen */
 import * as libCommon from "core/common.js";
 import * as libClient from "core/client.js";
 import * as libLog from "core/log.js";
@@ -335,7 +335,7 @@ export class Crossword implements libCommon.ModuleInterface {
 		if (method == null)
 			return;
 
-		/* extract the name */
+		/* extract the name (respond with 404 on error, as this is a totally owned endpoint) */
 		let name = client.path.slice(6);
 		if (!name.match(nameRegex) || name.length > nameMaxLength) {
 			client.respondNotFound();
@@ -516,15 +516,15 @@ export class Crossword implements libCommon.ModuleInterface {
 
 		/* check if its a redirection and forward it accordingly */
 		if (client.path == '/' || client.path == '/main') {
-			client.tryRespondFile(this.fileStatic('main.html'));
+			client.respondRedirect(client.makePath('/main.html'));
 			return;
 		}
 		if (client.path == '/editor') {
-			client.tryRespondFile(this.fileStatic('editor.html'));
+			client.respondRedirect(client.makePath('/editor.html'));
 			return;
 		}
 		if (client.path == '/play') {
-			client.tryRespondFile(this.fileStatic('play.html'));
+			client.respondRedirect(client.makePath('/play.html'));
 			return;
 		}
 
@@ -541,12 +541,10 @@ export class Crossword implements libCommon.ModuleInterface {
 		client.log(`Game handler for [${client.path}]`);
 
 		/* check if a web-socket is connecting */
-		if (!client.path.startsWith('/ws/')) {
-			client.respondNotFound();
+		if (!client.path.startsWith('/ws/'))
 			return;
-		}
 
-		/* extract the name and validate it */
+		/* extract the name and validate it (return with not-found as the entire endpoint is owned) */
 		let name = client.path.slice(4);
 		if (name.match(nameRegex) && name.length <= nameMaxLength) {
 			if (client.tryAcceptWebSocket((ws) => this.acceptWebSocket(ws, name)))

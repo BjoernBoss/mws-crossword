@@ -1,5 +1,5 @@
 <!-- SPDX-License-Identifier: BSD-3-Clause -->
-<!-- Copyright (c) 2025 Bjoern Boss Henrichsen -->
+<!-- Copyright (c) 2025-2026 Bjoern Boss Henrichsen -->
 <!DOCTYPE html>
 <html lang="en" style="margin: 0; height: 100%;">
 
@@ -8,8 +8,8 @@
 	<!-- prevent user-zooming as this breaks the viewport handling for keyboard-detection -->
 	<meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no">
 	<title>Editor</title>
-	<link rel="stylesheet" type="text/css" href="/crossword/style.css">
-	<script src="/crossword/grid.js"></script>
+	<link rel="stylesheet" type="text/css" href="./style.css">
+	<script src="./grid.js"></script>
 </head>
 
 <body contenteditable="false">
@@ -197,13 +197,13 @@
 
 		/* post the result out */
 		_state.uploading = true;
-		fetch(`/crossword/game/${name}`, { method: 'POST', body: JSON.stringify(out), headers: { "Content-Type": 'application/json' } })
+		fetch(`./game/${name}`, { method: 'POST', body: JSON.stringify(out), headers: { "Content-Type": 'application/json' } })
 			.then(function (resp) {
 				/* redirect to the main page */
 				if (!resp.ok)
 					throw new Error(resp.statusText);
 				_state.uploaded = true;
-				document.location = `/crossword/main.html?uploaded=${name}`;
+				document.location = `./main.html?uploaded=${name}`;
 			}).catch(function (e) {
 				/* post the error */
 				document.getElementById("finalize").classList.add('show');

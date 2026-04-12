@@ -1,5 +1,5 @@
 <!-- SPDX-License-Identifier: BSD-3-Clause -->
-<!-- Copyright (c) 2025 Bjoern Boss Henrichsen -->
+<!-- Copyright (c) 2025-2026 Bjoern Boss Henrichsen -->
 <!DOCTYPE html>
 <html lang="en" style="margin: 0; height: 100%;">
 
@@ -8,10 +8,10 @@
 	<!-- prevent user-zooming as this breaks the viewport handling for keyboard-detection -->
 	<meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1.0, user-scalable=no">
 	<title>Play Crossword</title>
-	<link rel="stylesheet" type="text/css" href="/crossword/style.css">
-	<script src="/crossword/notifier.js"></script>
-	<script src="/crossword/sync-socket.js"></script>
-	<script src="/crossword/grid.js"></script>
+	<link rel="stylesheet" type="text/css" href="./style.css">
+	<script src="./notifier.js"></script>
+	<script src="./sync-socket.js"></script>
+	<script src="./grid.js"></script>
 
 </head>
 
@@ -112,7 +112,7 @@
 			document.getElementById('caption').innerText = 'Unknown Crossword!';
 
 		/* setup the socket and register all corresponding callbacks */
-		_state.sock = new SyncSocket(`/crossword/ws/${_state.game}`);
+		_state.sock = new SyncSocket(`./ws/${_state.game}`);
 		_state.sock.onfailed = (msg) => PushNotification(msg, true, () => _state.sock.retry());
 		_state.sock.onreceived = (data) => _state.handleData(data);
 		_state.sock.onconnected = () => _state.handleConnected();

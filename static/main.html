@@ -1,5 +1,5 @@
 <!-- SPDX-License-Identifier: BSD-3-Clause -->
-<!-- Copyright (c) 2025 Bjoern Boss Henrichsen -->
+<!-- Copyright (c) 2025-2026 Bjoern Boss Henrichsen -->
 <!DOCTYPE html>
 <html lang="en">
 
@@ -7,8 +7,8 @@
 	<meta charset="utf-8">
 	<meta name="viewport" content="width=device-width, initial-scale=1">
 	<title>Crosswords!</title>
-	<link rel="stylesheet" type="text/css" href="/crossword/style.css">
-	<script src="/crossword/notifier.js"></script>
+	<link rel="stylesheet" type="text/css" href="./style.css">
+	<script src="./notifier.js"></script>
 </head>
 
 <body contenteditable="false">
@@ -62,7 +62,7 @@
 		/* patch the history to prevent the banner from being shown again */
 		if (window.history.replaceState) {
 			let url = `${document.location.protocol}//${window.location.host}${window.location.pathname}`;
-			if (url.endsWith('/'))
+			if (window.location.pathname.endsWith('/') && window.location.pathname != '/')
 				url = url.slice(0, url.length - 1);
 			window.history.replaceState({}, document.title, url);
 		}
@@ -74,7 +74,7 @@
 		});
 
 		/* start the query of all of the games */
-		fetch('/crossword/games')
+		fetch('./games')
 			.then(function (resp) {
 				if (resp.status != 200)
 					throw new Error(`Server responded with ${resp.status}`);
@@ -151,11 +151,11 @@
 		_state.busy = true;
 
 		/* try to remove the entry */
-		fetch(`/crossword/game/${_state.removing}`, { method: 'DELETE' })
+		fetch(`./game/${_state.removing}`, { method: 'DELETE' })
 			.then(function (resp) {
 				if (!resp.ok)
 					throw new Error(resp.statusText);
-				document.location = '/crossword/main.html';
+				document.location = './main.html';
 			}).catch(function (e) {
 				document.getElementById('error').classList.add('show');
 				document.getElementById('error').innerText = `Error while deleting the crossword: ${e.message}\nTry to reload the page...`;
@@ -167,9 +167,9 @@
 	}
 
 	_state.startEditor = function () {
-		document.location = '/crossword/editor.html';
+		document.location = './editor.html';
 	}
 	_state.startPlay = function (name) {
-		document.location = `/crossword/play.html?game=${name}`;
+		document.location = `./play.html?game=${name}`;
 	}
 </script>

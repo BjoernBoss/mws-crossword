@@ -16,6 +16,6 @@ To use this module, setup the `mws-base`. Then simply clone this repository into
 Afterwards, transpile the entire server application, and construct this module in the `setup.js Run` method as:
 
 ```JavaScript
-const m = await import("./crossword/crossword.js");
+const m = await import("crossword/crossword.js");
 server.listenHttp(93, new m.Crossword('path/to/crossword/data'), null);
 ```

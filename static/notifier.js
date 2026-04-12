@@ -1,5 +1,5 @@
 /* SPDX-License-Identifier: BSD-3-Clause */
-/* Copyright (c) 2025 Bjoern Boss Henrichsen */
+/* Copyright (c) 2025-2026 Bjoern Boss Henrichsen */
 function PushNotification(text, error, onreload) {
 	const host = document.getElementById('notification-host');
 
