@@ -4,6 +4,8 @@ import * as libCommon from "core/common.js";
 import * as libClient from "core/client.js";
 import * as libLog from "core/log.js";
 import * as libLocation from "core/location.js";
+import * as libBuilder from "core/builder.js";
+import * as libCache from "core/cache.js";
 import * as libFs from "fs";
 
 const nameRegex = '[a-zA-Z0-9]([-_.]?[a-zA-Z0-9])*';
@@ -500,6 +502,31 @@ export class Crossword implements libCommon.ModuleInterface {
 		/* send the initial state to the socket */
 		this.gameStates[name].notifySingle(client);
 	}
+	private buildMainPage(client: libClient.HttpRequest, page: libBuilder.HtmlPage, done: () => void): void {
+		page.addHead(libBuilder.Meta('viewport', 'width=device-width, initial-scale=1'));
+		page.addHead(libBuilder.Title('Crosswords!'));
+		page.addHead(libBuilder.StyleSheet(client.makePath('./style.css')));
+		page.addHead(libBuilder.Script(client.makePath('./notifier.js')));
+
+		/* lookup the actual file body */
+		const cached: libCache.CachedFile | null = libCache.Get(this.fileStatic('/main.html'));
+		if (cached == null) {
+			libLog.Error('Unable to load [crossword:/main.html]');
+			page.addBody(libBuilder.LoadError());
+			return done();
+		}
+
+		/* fetch the page itself from the cache and process it */
+		cached.async(function (content, error) {
+			if (error != null) {
+				client.error(`Failed to retrieve content: ${error.message}`);
+				page.addBody(libBuilder.LoadError());
+			}
+			else
+				page.addBody(content!.toString('utf-8'));
+			done();
+		});
+	}
 
 	public request(client: libClient.HttpRequest): void {
 		client.log(`Game handler for [${client.path}]`);
@@ -533,6 +560,10 @@ export class Crossword implements libCommon.ModuleInterface {
 			this.queryGames(client);
 			return;
 		}
+
+		/* check if its one of the html endpoints, and build it */
+		if (client.path == '/main.html')
+			return client.prepareHtml(libClient.StatusCode.Ok).modify((page, done) => this.buildMainPage(client, page, done));
 
 		/* respond to the request by trying to server the file */
 		client.tryRespondFile(this.fileStatic(client.path));
