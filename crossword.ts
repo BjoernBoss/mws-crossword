@@ -372,8 +372,7 @@ export class Crossword implements libCommon.ModuleInterface {
 			return;
 
 		/* collect all of the data */
-		let that = this;
-		client.receiveAllText(maxFileSize, client.getMediaTypeCharset('utf-8'), function (text, err) {
+		client.receiveAllText(maxFileSize, client.getMediaTypeCharset('utf-8'), (text, err) => {
 			/* check if an error occurred */
 			if (err) {
 				client.error(`Error occurred while posting to [${filePath}]: ${err.message}`);
@@ -384,7 +383,7 @@ export class Crossword implements libCommon.ModuleInterface {
 			/* parse the data */
 			let parsed = null;
 			try {
-				parsed = that.parseAndValidateGame(text!);
+				parsed = this.parseAndValidateGame(text!);
 			} catch (e: any) {
 				client.error(`Error while parsing the game: ${e.message}`);
 				client.respondBadRequest(e.message);
@@ -471,16 +470,15 @@ export class Crossword implements libCommon.ModuleInterface {
 		queueAliveCheck(true);
 
 		/* register the web-socket callbacks */
-		let that = this;
 		client.onpong = () => queueAliveCheck(true);
-		client.onclose = function () {
-			if (!that.gameStates[name].drop(client))
-				delete that.gameStates[name];
+		client.onclose = () => {
+			if (!this.gameStates[name].drop(client))
+				delete this.gameStates[name];
 			if (aliveInterval != null)
 				clearTimeout(aliveInterval);
 			client.log(`Socket disconnected`);
 		};
-		client.ondata = function (data) {
+		client.ondata = (data) => {
 			queueAliveCheck(true);
 
 			/* parse the data */
@@ -490,9 +488,9 @@ export class Crossword implements libCommon.ModuleInterface {
 
 				/* handle the command */
 				if (parsed.cmd == 'name' && typeof parsed.name == 'string')
-					that.gameStates[name].updateName(client, parsed.name);
+					this.gameStates[name].updateName(client, parsed.name);
 				else if (parsed.cmd == 'update')
-					that.gameStates[name].updateGrid(client, parsed.data);
+					this.gameStates[name].updateGrid(client, parsed.data);
 			} catch (e: any) {
 				client.error(`Failed to parse web-socket response: ${e.message}`);
 				client.close();
@@ -503,29 +501,14 @@ export class Crossword implements libCommon.ModuleInterface {
 		this.gameStates[name].notifySingle(client);
 	}
 	private buildMainPage(client: libClient.HttpRequest, page: libBuilder.HtmlPage, done: () => void): void {
-		page.addHead(libBuilder.Meta('viewport', 'width=device-width, initial-scale=1'));
-		page.addHead(libBuilder.Title('Crosswords!'));
-		page.addHead(libBuilder.StyleSheet(client.makePath('./style.css')));
-		page.addHead(libBuilder.Script(client.makePath('./notifier.js')));
+		const b = libBuilder;
 
-		/* lookup the actual file body */
-		const cached: libCache.CachedFile | null = libCache.Get(this.fileStatic('/main.html'));
-		if (cached == null) {
-			libLog.Error('Unable to load [crossword:/main.html]');
-			page.addBody(libBuilder.LoadError());
-			return done();
-		}
-
-		/* fetch the page itself from the cache and process it */
-		cached.async(function (content, error) {
-			if (error != null) {
-				client.error(`Failed to retrieve content: ${error.message}`);
-				page.addBody(libBuilder.LoadError());
-			}
-			else
-				page.addBody(content!.toString('utf-8'));
-			done();
-		});
+		/* add the required page headers and load the content from cache */
+		page.head += b.Meta('viewport', 'width=device-width, initial-scale=1');
+		page.head += b.Title('Crosswords!');
+		page.head += b.StyleSheet(client.makePath('./style.css'));
+		page.head += b.Script(client.makePath('./notifier.js'));
+		libCache.HtmlFromCache(this.fileStatic('/main.html'), client, page, done);
 	}
 
 	public request(client: libClient.HttpRequest): void {

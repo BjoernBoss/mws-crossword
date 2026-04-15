@@ -103,25 +103,24 @@ class SyncSocket {
 		}
 
 		/* register all callbacks to the socket */
-		let that = this;
 		this._ws.onmessage = (m) => this._received(m);
-		this._ws.onclose = function () {
-			console.error(`Connection to remote lost [${that._url}]`);
-			that._failed(true);
+		this._ws.onclose = () => {
+			console.error(`Connection to remote lost [${this._url}]`);
+			this._failed(true);
 		};
-		this._ws.onopen = function () {
-			console.log(`Connection established to [${that._url}]`);
-			that._state = 'ready';
-			that._wasConnected = true;
-			that._resetTimeout();
+		this._ws.onopen = () => {
+			console.log(`Connection established to [${this._url}]`);
+			this._state = 'ready';
+			this._wasConnected = true;
+			this._resetTimeout();
 
 			/* clear the old queue and notify the client about the established connection */
-			that._queued = [];
-			if (that.onconnected != null)
-				that.onconnected();
+			this._queued = [];
+			if (this.onconnected != null)
+				this.onconnected();
 
 			/* handle the queue */
-			that._handleQueue();
+			this._handleQueue();
 		};
 		this._ws.onerror = () => this._failed(false);
 	}
