@@ -506,10 +506,24 @@ export class Crossword implements libCommon.ModuleInterface {
 		/* add the required page headers and load the content from cache */
 		page.head += b.Meta('viewport', 'width=device-width, initial-scale=1');
 		page.head += b.Title('Crosswords!');
-		page.head += b.StyleSheet(client.makePath('./style.css'));
-		page.head += b.Script(client.makePath('./notifier.js'));
+		page.head += b.StyleSheet(client.makePath('/style.css'));
+		page.head += b.Script(client.makePath('/notifier.js'));
 		libCache.HtmlFromCache(this.fileStatic('/main.html'), client, page, done);
 	}
+	private buildPlayPage(client: libClient.HttpRequest, page: libBuilder.HtmlPage, done: () => void): void {
+		const b = libBuilder;
+
+		/* add the required page headers and load the content from cache (prevent
+		*	user-zooming as this breaks viewport handling for keyboard-detection) */
+		page.head += b.Meta('viewport', 'width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no');
+		page.head += b.Title('Play Crossword!');
+		page.head += b.StyleSheet(client.makePath('/style.css'));
+		page.head += b.Script(client.makePath('/notifier.js'));
+		page.head += b.Script(client.makePath('/sync-socket.js'));
+		page.head += b.Script(client.makePath('/grid.js'));
+		libCache.HtmlFromCache(this.fileStatic('/play.html'), client, page, done);
+	}
+
 
 	public request(client: libClient.HttpRequest): void {
 		client.log(`Game handler for [${client.path}]`);
@@ -544,9 +558,11 @@ export class Crossword implements libCommon.ModuleInterface {
 			return;
 		}
 
-		/* check if its one of the html endpoints, and build it */
+		/* check if its one of the html endpoints and build them */
 		if (client.path == '/main.html')
 			return client.prepareHtml(libClient.StatusCode.Ok).modify((page, done) => this.buildMainPage(client, page, done));
+		if (client.path == '/play.html')
+			return client.prepareHtml(libClient.StatusCode.Ok).modify((page, done) => this.buildPlayPage(client, page, done));
 
 		/* respond to the request by trying to server the file */
 		client.tryRespondFile(this.fileStatic(client.path));
