@@ -506,8 +506,8 @@ export class Crossword implements libCommon.ModuleInterface {
 		/* add the required page headers and load the content from cache */
 		page.head += b.Meta('viewport', 'width=device-width, initial-scale=1');
 		page.head += b.Title('Crosswords!');
-		page.head += b.StyleSheet(client.makePath('/style.css'));
-		page.head += b.Script(client.makePath('/notifier.js'));
+		page.head += b.LoadStyle(client.makePath('/style.css'));
+		page.head += b.LoadScript(client.makePath('/notifier.js'));
 		libCache.HtmlFromCache(this.fileStatic('/main.html'), client, page, done);
 	}
 	private buildPlayPage(client: libClient.HttpRequest, page: libBuilder.HtmlPage, done: () => void): void {
@@ -517,10 +517,10 @@ export class Crossword implements libCommon.ModuleInterface {
 		*	user-zooming as this breaks viewport handling for keyboard-detection) */
 		page.head += b.Meta('viewport', 'width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no');
 		page.head += b.Title('Play Crossword!');
-		page.head += b.StyleSheet(client.makePath('/style.css'));
-		page.head += b.Script(client.makePath('/notifier.js'));
-		page.head += b.Script(client.makePath('/sync-socket.js'));
-		page.head += b.Script(client.makePath('/grid.js'));
+		page.head += b.LoadStyle(client.makePath('/style.css'));
+		page.head += b.LoadScript(client.makePath('/notifier.js'));
+		page.head += b.LoadScript(client.makePath('/sync-socket.js'));
+		page.head += b.LoadScript(client.makePath('/grid.js'));
 		libCache.HtmlFromCache(this.fileStatic('/play.html'), client, page, done);
 	}
 	private buildEditorPage(client: libClient.HttpRequest, page: libBuilder.HtmlPage, done: () => void): void {
@@ -530,8 +530,8 @@ export class Crossword implements libCommon.ModuleInterface {
 		*	user-zooming as this breaks viewport handling for keyboard-detection) */
 		page.head += b.Meta('viewport', 'width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no');
 		page.head += b.Title('Crossword Editor');
-		page.head += b.StyleSheet(client.makePath('/style.css'));
-		page.head += b.Script(client.makePath('/grid.js'));
+		page.head += b.LoadStyle(client.makePath('/style.css'));
+		page.head += b.LoadScript(client.makePath('/grid.js'));
 		libCache.HtmlFromCache(this.fileStatic('/editor.html'), client, page, done);
 	}
 
