@@ -1,6 +1,6 @@
 /* SPDX-License-Identifier: BSD-3-Clause */
 /* Copyright (c) 2025-2026 Bjoern Boss Henrichsen */
-import * as libCommon from "core/common.js";
+import * as libInterface from "core/interface.js";
 import * as libClient from "core/client.js";
 import * as libLog from "core/log.js";
 import * as libLocation from "core/location.js";
@@ -276,7 +276,7 @@ class ActiveGame {
 	}
 };
 
-export class Crossword implements libCommon.ModuleInterface {
+export class Crossword implements libInterface.ModuleInterface {
 	private fileStatic: (path: string) => string;
 	private fileGames: (path: string) => string;
 	private gameStates: Record<string, ActiveGame>;
@@ -331,7 +331,7 @@ export class Crossword implements libCommon.ModuleInterface {
 		}
 		return out;
 	}
-	private modifyGame(client: libClient.HttpRequest): void {
+	private async modifyGame(client: libClient.HttpRequest): Promise<void> {
 		/* validate the method */
 		const method = client.ensureMethod(['POST', 'DELETE']);
 		if (method == null)
@@ -372,13 +372,8 @@ export class Crossword implements libCommon.ModuleInterface {
 			return;
 
 		/* collect all of the data */
-		client.receiveAllText(maxFileSize, client.getMediaTypeCharset('utf-8'), (text, err) => {
-			/* check if an error occurred */
-			if (err) {
-				client.error(`Error occurred while posting to [${filePath}]: ${err.message}`);
-				client.respondInternalError('Network issue regarding the post payload');
-				return;
-			}
+		try {
+			const text: string = await client.receiveAllText(client.getMediaTypeCharset('utf-8'), maxFileSize);
 
 			/* parse the data */
 			let parsed = null;
@@ -402,7 +397,12 @@ export class Crossword implements libCommon.ModuleInterface {
 
 			/* validate the post content */
 			client.respondOk('upload');
-		});
+		}
+		catch (err: any) {
+			client.error(`Error occurred while posting to [${filePath}]: ${err.message}`);
+			client.respondInternalError('Network issue regarding the post payload');
+			return;
+		}
 	}
 	private queryGames(client: libClient.HttpRequest): void {
 		let content: string[] = [];
@@ -500,18 +500,51 @@ export class Crossword implements libCommon.ModuleInterface {
 		/* send the initial state to the socket */
 		this.gameStates[name].notifySingle(client);
 	}
-	private buildMainPage(client: libClient.HttpRequest, page: libBuilder.HtmlPage, done: () => void): void {
+	private async fetchBody(client: libClient.HttpRequest, path: string): Promise<string | null> {
+		const fullPath = this.fileStatic(path);
+
+		/* look for the file */
+		const cached: libCache.Cached | null = libCache.Get(fullPath);
+		if (cached == null) {
+			client.error(`Failed to find content [${fullPath}]`);
+			return null;
+		}
+
+		/* read the file */
+		try {
+			return (await cached.readAsync()).toString('utf-8');
+		}
+		catch (err: any) {
+			client.error(`Failed to read content [${fullPath}]: ${err.message}`);
+			client.respondInternalError('File operation failed');
+			return null;
+		}
+	}
+	private async buildMainPage(client: libClient.HttpRequest): Promise<void> {
 		const b = libBuilder;
+
+		/* read the body */
+		const body: string | null = await this.fetchBody(client, '/main.html');
+		if (body == null)
+			return;
+		const page = new libBuilder.HtmlPage('en', '', b.Embed(body));
+		client.respondHtml(page, libClient.StatusCode.Ok);
 
 		/* add the required page headers and load the content from cache */
 		page.head += b.Meta('viewport', 'width=device-width, initial-scale=1');
 		page.head += b.Title('Crosswords!');
 		page.head += b.LoadStyle(client.makePath('/style.css'));
 		page.head += b.LoadScript(client.makePath('/notifier.js'));
-		libCache.HtmlFromCache(this.fileStatic('/main.html'), client, page, done);
 	}
-	private buildPlayPage(client: libClient.HttpRequest, page: libBuilder.HtmlPage, done: () => void): void {
+	private async buildPlayPage(client: libClient.HttpRequest): Promise<void> {
 		const b = libBuilder;
+
+		/* read the body */
+		const body: string | null = await this.fetchBody(client, '/play.html');
+		if (body == null)
+			return;
+		const page = new libBuilder.HtmlPage('en', '', b.Embed(body));
+		client.respondHtml(page, libClient.StatusCode.Ok);
 
 		/* add the required page headers and load the content from cache (prevent
 		*	user-zooming as this breaks viewport handling for keyboard-detection) */
@@ -521,67 +554,62 @@ export class Crossword implements libCommon.ModuleInterface {
 		page.head += b.LoadScript(client.makePath('/notifier.js'));
 		page.head += b.LoadScript(client.makePath('/sync-socket.js'));
 		page.head += b.LoadScript(client.makePath('/grid.js'));
-		libCache.HtmlFromCache(this.fileStatic('/play.html'), client, page, done);
 	}
-	private buildEditorPage(client: libClient.HttpRequest, page: libBuilder.HtmlPage, done: () => void): void {
+	private async buildEditorPage(client: libClient.HttpRequest): Promise<void> {
 		const b = libBuilder;
 
+		/* read the body */
+		const body: string | null = await this.fetchBody(client, '/editor.html');
+		if (body == null)
+			return;
+		const page = new libBuilder.HtmlPage('en', '', b.Embed(body));
+		client.respondHtml(page, libClient.StatusCode.Ok);
+
 		/* add the required page headers and load the content from cache (prevent
-		*	user-zooming as this breaks viewport handling for keyboard-detection) */
+	*	user-zooming as this breaks viewport handling for keyboard-detection) */
 		page.head += b.Meta('viewport', 'width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no');
 		page.head += b.Title('Crossword Editor');
 		page.head += b.LoadStyle(client.makePath('/style.css'));
 		page.head += b.LoadScript(client.makePath('/grid.js'));
-		libCache.HtmlFromCache(this.fileStatic('/editor.html'), client, page, done);
 	}
 
-	public request(client: libClient.HttpRequest): void {
+	public async request(client: libClient.HttpRequest): Promise<void> {
 		client.log(`Game handler for [${client.path}]`);
 
 		/* check if a game is being manipulated */
-		if (client.path.startsWith('/game/')) {
-			this.modifyGame(client);
-			return;
-		}
+		if (client.path.startsWith('/game/'))
+			return this.modifyGame(client);
 
 		/* all other endpoints only support 'getting' */
 		if (client.ensureMethod(['GET']) == null)
 			return;
 
 		/* check if its a redirection and forward it accordingly */
-		if (client.path == '/' || client.path == '/main') {
-			client.respondRedirect(client.makePath('/main.html'));
-			return;
-		}
-		if (client.path == '/editor') {
-			client.respondRedirect(client.makePath('/editor.html'));
-			return;
-		}
-		if (client.path == '/play') {
-			client.respondRedirect(client.makePath('/play.html'));
-			return;
-		}
+		if (client.path == '/' || client.path == '/main')
+			return client.respondRedirect(client.makePath('/main.html'));
+		if (client.path == '/editor')
+			return client.respondRedirect(client.makePath('/editor.html'));
+		if (client.path == '/play')
+			return client.respondRedirect(client.makePath('/play.html'));
 
 		/* check if the games are queried */
-		if (client.path == '/games') {
-			this.queryGames(client);
-			return;
-		}
+		if (client.path == '/games')
+			return this.queryGames(client);
 
 		/* check if its one of the html endpoints and build them (discard any other requests) */
 		if (client.path == '/main.html')
-			return client.prepareHtml(libClient.StatusCode.Ok).modify((page, done) => this.buildMainPage(client, page, done));
+			return this.buildMainPage(client);
 		if (client.path == '/play.html')
-			return client.prepareHtml(libClient.StatusCode.Ok).modify((page, done) => this.buildPlayPage(client, page, done));
+			return this.buildPlayPage(client);
 		if (client.path == '/editor.html')
-			return client.prepareHtml(libClient.StatusCode.Ok).modify((page, done) => this.buildEditorPage(client, page, done));
+			return this.buildEditorPage(client);
 		if (client.path.toLowerCase().endsWith('.html'))
 			return;
 
 		/* respond to the request by trying to server the file */
 		client.tryRespondFile(this.fileStatic(client.path));
 	}
-	public upgrade(client: libClient.HttpUpgrade): void {
+	public async upgrade(client: libClient.HttpUpgrade): Promise<void> {
 		client.log(`Game handler for [${client.path}]`);
 
 		/* check if a web-socket is connecting */
