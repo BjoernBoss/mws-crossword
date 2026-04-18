@@ -1,6 +1,9 @@
 /* SPDX-License-Identifier: BSD-3-Clause */
 /* Copyright (c) 2025-2026 Bjoern Boss Henrichsen */
 class SyncSocket {
+	static MaxNumberOfConnectAttempts = 2;
+	static ConnectDelayMs = 250;
+
 	constructor(path) {
 		this._ws = null;
 
@@ -16,8 +19,8 @@ class SyncSocket {
 		/* queued callbacks to send to the remote */
 		this._queued = [];
 
-		/* delay before trying to restart the connection again */
-		this._delay = 0;
+		/* number of tries to establish the connection */
+		this._connectAttempts = 0;
 
 		/* has the connection already existed */
 		this._wasConnected = false;
@@ -34,7 +37,6 @@ class SyncSocket {
 		this._url = new URL(path, `${protocol}://${location.host}${location.pathname}`).href;
 
 		/* try to establish the first connection */
-		this._resetTimeout();
 		this._establish();
 	}
 
@@ -56,10 +58,8 @@ class SyncSocket {
 
 	/* retry to establish a connection */
 	retry() {
-		if (this._state == 'failed') {
-			this._resetTimeout();
+		if (this._state == 'failed')
 			this._establish();
-		}
 	}
 
 	/* kill a current connection and prevent retrying to connect and log the error */
@@ -70,9 +70,6 @@ class SyncSocket {
 		}
 	}
 
-	_resetTimeout() {
-		this._delay = 128;
-	}
 	_handleQueue() {
 		/* check if a connection is valid */
 		if (this._state != 'ready' || this._queued.length == 0)
@@ -93,6 +90,7 @@ class SyncSocket {
 	_establish() {
 		console.log(`Trying to connect to [${this._url}]...`);
 		this._state = 'connecting';
+		++this._connectAttempts;
 
 		/* try to create the socket */
 		try {
@@ -112,7 +110,7 @@ class SyncSocket {
 			console.log(`Connection established to [${this._url}]`);
 			this._state = 'ready';
 			this._wasConnected = true;
-			this._resetTimeout();
+			this._connectAttempts = 0;
 
 			/* clear the old queue and notify the client about the established connection */
 			this._queued = [];
@@ -136,10 +134,9 @@ class SyncSocket {
 		/* check if this was the final try or if another try should be queued */
 		if (this._state == 'failed')
 			return;
-		if (this._delay <= 512) {
+		if (this._connectAttempts < SyncSocket.MaxNumberOfConnectAttempts) {
 			this._state = 'connecting';
-			setTimeout(() => this._establish(), this._delay);
-			this._delay *= 2;
+			setTimeout(() => this._establish(), SyncSocket.ConnectDelayMs);
 			return;
 		}
 

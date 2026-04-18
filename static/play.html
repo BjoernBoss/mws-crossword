@@ -60,7 +60,8 @@
 			usedsHues: [],
 			view: null,
 			focus: null,
-			configured: false
+			configured: false,
+			failedNotified: false
 		};
 
 		window.onload = function () {
@@ -298,10 +299,18 @@
 				_state.sock.error(`Game [${_state.game}] not known by the server!`);
 				return;
 			}
+			else if (data === 'corrupted-game') {
+				_state.sock.error(`Game [${_state.game}] is corrupted on server!`);
+				return;
+			}
 
-			/* check if the server has failed */
-			if (data.failed)
-				PushNotification('Server failed to write the game back!', true, null);
+			/* check if the server has failed (only notify once per failure) */
+			if (!data.failed)
+				_state.failedNotified = false;
+			else if (!_state.failedNotified) {
+				_state.failedNotified = true;
+				PushNotification('Server encountered an issue saving the game!', true, null);
+			}
 
 			/* mark all players as offline until the online re-enables them */
 			for (const key in _state.players)

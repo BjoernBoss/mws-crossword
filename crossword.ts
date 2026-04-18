@@ -6,13 +6,14 @@ import * as libLog from "core/log.js";
 import * as libLocation from "core/location.js";
 import * as libBuilder from "core/builder.js";
 import * as libCache from "core/cache.js";
-import * as libFs from "fs";
+import * as libFs from "fs/promises";
 
-const nameRegex = '[a-zA-Z0-9]([-_.]?[a-zA-Z0-9])*';
-const nameMaxLength = 255;
-const maxFileSize = 1_000_000;
-const pingTimeout = 60_000;
-const writeBackDelay = 20_000;
+const NameRegex = '^[a-zA-Z0-9]([-_.]?[a-zA-Z0-9])*$';
+const NameMaxLength = 255;
+const GridDimensions = { min: 1, max: 64 };
+const MaxFileSize = 100_000;
+const PingTimeout = 60_000;
+const WriteBackDelayMs = 60_000;
 
 interface GridCell {
 	solid: boolean;
@@ -31,34 +32,133 @@ interface GameState extends GameBoard {
 	names: string[];
 	online: string[];
 }
+enum GameLoadState {
+	valid,
+	doesNotExist,
+	corrupted
+}
+
+function ParseAndValidateCells(grid: any, size: number, shallowGrid: boolean, refCells: GridCell[] | null): [GridCell[], boolean] {
+	/* validate the root grid format */
+	if (!Array.isArray(grid) || grid.length != size)
+		throw new Error('Malformed Grid');
+	let out: GridCell[] = [], dirty: boolean = false;
+
+	/* validate the separate cells */
+	for (let i = 0; i < grid.length; ++i) {
+		const cell = grid[i];
+		const ref: GridCell | null = (refCells == null ? null : refCells[i]);
+
+		/* check if its a shallow (solid-only) cell */
+		if (shallowGrid) {
+			if (typeof cell != 'boolean')
+				throw new Error('Malformed Grid');
+			out.push({ solid: cell, char: '', certain: false, author: '', time: 0 });
+			continue;
+		}
+
+		/* validate the data-types */
+		if (typeof cell.char != 'string' || typeof cell.certain != 'boolean' || typeof cell.author != 'string' || typeof cell.time != 'number')
+			throw new Error('Malformed Grid');
+		if (ref == null && typeof cell.solid != 'boolean')
+			throw new Error('Malformed Grid');
+
+		/* check if the grid is not newer than the current grid */
+		if (ref != null && cell.time <= ref.time) {
+			out.push(ref);
+			continue;
+		}
+
+		/* setup the sanitized data */
+		let char: string = cell.char.slice(0, 1).toUpperCase();
+		let author: string = cell.author.slice(0, NameMaxLength);
+		let certain: boolean = cell.certain;
+		if (ref == null ? cell.solid : ref.solid)
+			char = '', author = '', certain = false;
+		else if (char == '' || char < 'A' || char > 'Z')
+			char = '', author = '', certain = false;
+		else if (ref != null && char == ref.char)
+			author = ref.author;
+
+		/* check if the data actually have changed */
+		if (ref != null && char == ref.char && certain == ref.certain && author == ref.author) {
+			out.push(ref);
+			continue;
+		}
+
+		/* push the new updated cell */
+		out.push({ solid: (ref == null ? cell.solid : ref.solid), char: char, certain: certain, author: author, time: cell.time });
+		dirty = true;
+	}
+	return [out, dirty];
+}
+function ParseAndValidateGameBoard(data: string, shallowGrid: boolean): GameBoard {
+	/* parse the json content */
+	let obj = null;
+	try { obj = JSON.parse(data); }
+	catch (e) {
+		throw new Error('Malformed JSON encountered');
+	}
+
+	/* validate the overall structure */
+	if (typeof obj != 'object')
+		throw new Error('Malformed object');
+	if (typeof obj.width != 'number' || typeof obj.height != 'number'
+		|| !isFinite(obj.width) || obj.width < GridDimensions.min || obj.width > GridDimensions.max
+		|| !isFinite(obj.height) || obj.height < GridDimensions.min || obj.height > GridDimensions.max)
+		throw new Error('Malformed Dimensions');
+
+	/* validate and parse the list of cells and return the game structure */
+	const [cells, _] = ParseAndValidateCells(obj.grid, obj.width * obj.height, shallowGrid, null);
+	return { width: obj.width, height: obj.height, grid: cells };
+}
 
 class ActiveGame {
 	private ws: Map<libClient.ClientSocket, string>;
 	private data: GameBoard | null;
 	private filePath: string;
 	private writebackFailed: boolean;
-	private queued: NodeJS.Timeout | null;
+	private loading: Promise<GameLoadState>;
+	private queue: { backlog?: () => void, timer: NodeJS.Timeout | null, active: boolean };
 
 	constructor(filePath: string) {
 		this.ws = new Map<libClient.ClientSocket, string>();
 		this.data = null;
 		this.filePath = filePath;
 		this.writebackFailed = false;
-		this.queued = null;
-
-		/* fetch the initial data */
-		try {
-			const file = libFs.readFileSync(this.filePath, { encoding: 'utf-8', flag: 'r' });
-			this.data = JSON.parse(file);
-		}
-		catch (e: any) {
-			libLog.Error(`Failed to read the current game state: ${e.message}`);
-		}
+		this.loading = this.loadGameState();
+		this.queue = { timer: null, active: false };
 	}
 
+	private async loadGameState(): Promise<GameLoadState> {
+		let data: string = '';
+
+		/* try to read the game state */
+		try {
+			data = await libFs.readFile(this.filePath, { encoding: 'utf-8' });
+		}
+		catch (e: any) {
+			if (e.code === 'ENOENT') {
+				libLog.Error(`Game [${this.filePath}] does not exist: ${e.message}`);
+				return GameLoadState.doesNotExist;
+			}
+			libLog.Error(`Failed to read the game [${this.filePath}] state: ${e.message}`);
+			return GameLoadState.corrupted;
+		}
+
+		/* parse and validate the game state */
+		try {
+			this.data = ParseAndValidateGameBoard(data, false);
+			return GameLoadState.valid;
+		}
+		catch (e: any) {
+			libLog.Error(`Corrupted game state found [${this.filePath}]: ${e.message}`);
+			return GameLoadState.corrupted;
+		}
+	}
 	private buildOutput(): GameState {
 		if (this.data == null)
-			return { failed: false, grid: [], width: 0, height: 0, names: [], online: [] };
+			return { failed: true, grid: [], width: 0, height: 0, names: [], online: [] };
 		let out: GameState = {
 			failed: this.writebackFailed,
 			grid: this.data.grid,
@@ -105,65 +205,88 @@ class ActiveGame {
 		const json = JSON.stringify(this.buildOutput());
 		ws.send(json);
 	}
-	private queueWriteBack(): void {
-		if (this.data == null) return;
-
-		/* kill the last queue */
-		if (this.queued != null)
-			clearTimeout(this.queued);
-		this.queued = setTimeout(() => this.writeBack(false), writeBackDelay);
-	}
-	private writeBack(final: boolean): void {
-		/* check if the data are dirty */
-		if (this.queued == null) return;
-		clearTimeout(this.queued);
-		this.queued = null;
-
-		const tempPath = `${this.filePath}.upload`;
-		let written = false;
-		try {
-			/* try to write the data back to a temporary file */
-			libLog.Log(`Creating temporary file [${tempPath}] for [${this.filePath}]`);
-			libFs.writeFileSync(tempPath, JSON.stringify(this.data), { encoding: 'utf-8', flag: 'wx' });
-			written = true;
-
-			/* replace the existing file */
-			libLog.Log(`Replacing file [${this.filePath}]`);
-			libFs.renameSync(tempPath, this.filePath);
-			this.writebackFailed = false;
+	private queueWriteBack(dropAsActiveGame: () => void): void {
+		/* check if the game can just be dropped */
+		if (this.data == null) {
+			if (this.ws.size == 0)
+				dropAsActiveGame();
 			return;
 		}
-		catch (e: any) {
-			if (written)
-				libLog.Error(`Failed to replace original file [${this.filePath}]: ${e.message}`);
-			else
-				libLog.Error(`Failed to write to temporary file [${tempPath}]: ${e.message}`);
+
+		/* check if an entry is already being written back */
+		if (this.queue.active) {
+			this.queue.backlog = dropAsActiveGame;
+			return;
 		}
 
-		/* remove the temporary file */
-		try {
-			libFs.unlinkSync(tempPath);
-		}
-		catch (e: any) {
-			libLog.Error(`Failed to remove temporary file [${tempPath}]: ${e.message}`);
-		}
+		/* kill the last queue as the new entry will now be queued */
+		if (this.queue.timer != null)
+			clearTimeout(this.queue.timer);
 
-		/* check if the changes should be discarded */
-		if (final)
-			libLog.Warning(`Discarding write-back as state is lost`);
-		else
-			this.queueWriteBack();
+		/* queue the next write-back execution */
+		this.queue.timer = setTimeout(async () => {
+			/* mark the queue as now being processed and cache the state being stored */
+			this.queue.timer = null;
+			this.queue.active = true;
+			const currentState: string = JSON.stringify(this.data);
 
-		/* notify about the failed write-back */
-		if (!this.writebackFailed)
-			this.notifyAll();
-		this.writebackFailed = true;
+			/* prepare the writeback to the temporary upload file */
+			const tempPath = `${this.filePath}.upload`;
+			let written = false;
+			try {
+				/* try to write the data back to a temporary file */
+				libLog.Log(`Uploading crossword via temporary file [${tempPath}] for [${this.filePath}]`);
+				await libFs.writeFile(tempPath, currentState, { encoding: 'utf-8' });
+				written = true;
+
+				/* replace the existing file */
+				await libFs.rename(tempPath, this.filePath);
+				this.writebackFailed = false;
+			}
+			catch (e: any) {
+				if (written)
+					libLog.Error(`Failed to replace original file [${this.filePath}]: ${e.message}`);
+				else
+					libLog.Error(`Failed to write to temporary file [${tempPath}]: ${e.message}`);
+
+				/* try to remove the temporary file */
+				try {
+					await libFs.unlink(tempPath);
+				}
+				catch (e: any) {
+					libLog.Error(`Failed to remove temporary file [${tempPath}]: ${e.message}`);
+				}
+
+				/* notify about the failed write-back */
+				if (!this.writebackFailed) {
+					this.writebackFailed = true;
+					this.notifyAll();
+				}
+
+				/* check if the changes will be discarded, or if another write approach should be made */
+				if (this.ws.size == 0)
+					libLog.Warning(`Discarding write-back as state is lost`);
+				else if (this.queue.backlog == undefined)
+					this.queue.backlog = dropAsActiveGame;
+			}
+
+			/* check if the current game can be dropped or if the next write-back needs to be started */
+			this.queue.active = false;
+			if (this.queue.backlog != undefined)
+				this.queueWriteBack(this.queue.backlog);
+			else if (this.ws.size == 0)
+				dropAsActiveGame();
+			this.queue.backlog = undefined;
+		}, WriteBackDelayMs);
 	}
 
+	public waitOnGame(): Promise<GameLoadState> {
+		return this.loading;
+	}
 	public updateGrid(client: libClient.ClientSocket, grid: any): void {
 		/* ensure that a grid exists */
 		if (this.data == null) {
-			client.log(`Discarding grid update for failed load [${this.filePath}]`);
+			client.log(`Discarding grid update for corrupted load [${this.filePath}]`);
 			this.notifySingle(client);
 			return;
 		}
@@ -175,58 +298,11 @@ class ActiveGame {
 			return;
 		}
 
-		/* validate the grid structure */
-		let dirty = false, valid = (this.data.grid.length == grid.length);
-		let merged: GridCell[] = [];
-		for (let i = 0; i < grid.length && valid; ++i) {
-			/* validate the data-types */
-			if (typeof grid[i].char != 'string' || typeof grid[i].certain != 'boolean' || typeof grid[i].author != 'string' || typeof grid[i].time != 'number') {
-				valid = false;
-				break;
-			}
-
-			/* check if the grid is not newer than the current grid */
-			if (grid[i].time <= this.data.grid[i].time) {
-				merged.push(this.data.grid[i]);
-				continue;
-			}
-
-			/* setup the sanitized data */
-			let char = grid[i].char.slice(0, 1).toUpperCase();
-			let certain = grid[i].certain;
-			let author = grid[i].author.slice(0, nameMaxLength + 1);
-			if (this.data.grid[i].solid) {
-				char = '';
-				author = '';
-				certain = false;
-			}
-			else if (char == '' || char < 'A' || char > 'Z') {
-				char = '';
-				author = '';
-				certain = false;
-			}
-			else if (char == this.data.grid[i].char)
-				author = this.data.grid[i].author;
-
-			/* check if the data actually have changed */
-			if (char == this.data.grid[i].char && certain == this.data.grid[i].certain && author == this.data.grid[i].author) {
-				merged.push(this.data.grid[i]);
-				continue;
-			}
-
-			/* update the merged grid */
-			merged.push({
-				solid: this.data.grid[i].solid,
-				char: char,
-				certain: certain,
-				author: author,
-				time: grid[i].time
-			});
-			dirty = true;
+		let merged: GridCell[] | null = null, dirty: boolean = false;
+		try {
+			[merged, dirty] = ParseAndValidateCells(grid, this.data.grid.length, false, this.data.grid);
 		}
-
-		/* check if the grid data are valid and otherwise notify the user */
-		if (!valid) {
+		catch (_) {
 			client.error(`Discarding invalid grid update [${this.filePath}]`);
 			this.notifySingle(client);
 			return;
@@ -242,31 +318,28 @@ class ActiveGame {
 		/* update the grid and notify the listeners about the change */
 		this.data.grid = merged;
 		this.notifyAll();
-		this.queueWriteBack();
+		this.queueWriteBack(() => { });
 	}
 	public updateName(ws: libClient.ClientSocket, name: string): void {
-		name = name.slice(0, nameMaxLength + 1);
+		name = name.slice(0, NameMaxLength);
 		if (this.ws.get(ws) == name) return;
 
 		/* update the name and notify the other sockets */
 		this.ws.set(ws, name);
 		this.notifyAll();
 	}
-	public drop(ws: libClient.ClientSocket): boolean {
+	public drop(ws: libClient.ClientSocket, dropAsActiveGame: () => void): void {
 		/* remove the web-socket from the open connections */
 		let name = this.ws.get(ws)!;
 		this.ws.delete(ws);
 
 		/* check if this was the last listener and the object can be unloaded */
-		if (this.ws.size == 0) {
-			this.writeBack(true);
-			return false;
-		}
+		if (this.ws.size == 0)
+			this.queueWriteBack(dropAsActiveGame);
 
 		/* check if other listeners should be notified */
-		if (name.length > 0)
+		else if (name.length > 0)
 			this.notifyAll();
-		return true;
 	}
 	public register(ws: libClient.ClientSocket): void {
 		this.ws.set(ws, '');
@@ -288,49 +361,6 @@ export class Crossword implements libInterface.ModuleInterface {
 		this.gameStates = {};
 	}
 
-	private parseAndValidateGame(data: string): GameBoard {
-		/* parse the json content */
-		let obj = null;
-		try {
-			obj = JSON.parse(data);
-		}
-		catch (e) {
-			throw new Error('Malformed JSON encountered');
-		}
-
-		/* validate the overall structure */
-		if (typeof obj != 'object')
-			throw new Error('Malformed object');
-		if (typeof obj.width != 'number' || typeof obj.height != 'number'
-			|| !isFinite(obj.width) || obj.width <= 0 || obj.width > 64
-			|| !isFinite(obj.height) || obj.height <= 0 || obj.height > 64)
-			throw new Error('Malformed Dimensions');
-
-		/* validate the grid */
-		if (obj.grid.length !== obj.width * obj.height)
-			throw new Error('Malformed Grid');
-		for (let i = 0; i < obj.width * obj.height; ++i) {
-			if (typeof obj.grid[i] != 'boolean')
-				throw new Error('Malformed Grid');
-		}
-		const out: GameBoard = {
-			width: obj.width,
-			height: obj.height,
-			grid: []
-		};
-
-		/* construct the final initial gameboard */
-		for (let i = 0; i < obj.grid.length; ++i) {
-			out.grid.push({
-				solid: obj.grid[i],
-				char: '',
-				certain: false,
-				author: '',
-				time: 0
-			});
-		}
-		return out;
-	}
 	private async modifyGame(client: libClient.HttpRequest): Promise<void> {
 		/* validate the method */
 		const method = client.ensureMethod(['POST', 'DELETE']);
@@ -339,7 +369,7 @@ export class Crossword implements libInterface.ModuleInterface {
 
 		/* extract the name (respond with 404 on error, as this is a totally owned endpoint) */
 		let name = client.path.slice(6);
-		if (!name.match(nameRegex) || name.length > nameMaxLength) {
+		if (!name.match(NameRegex) || name.length > NameMaxLength) {
 			client.respondNotFound();
 			return;
 		}
@@ -348,22 +378,18 @@ export class Crossword implements libInterface.ModuleInterface {
 
 		/* check if the game is being removed */
 		if (method == 'DELETE') {
-			if (!libFs.existsSync(filePath))
-				client.respondNotFound();
-			else try {
-				libFs.unlinkSync(filePath);
+			try {
+				await libFs.unlink(filePath);
 				libLog.Log(`Game file: [${filePath}] deleted successfully`);
 				client.respondOk('delete');
 			} catch (e: any) {
+				/*  check why the removal failed and log it accordingly */
 				libLog.Error(`Error while removing file [${filePath}]: ${e.message}`);
-				client.respondInternalError('File-System error removing the game');
+				if (e.code === 'ENOENT')
+					client.respondNotFound();
+				else
+					client.respondFileSystemError();
 			}
-			return;
-		}
-
-		/* a game must be uploaded */
-		if (libFs.existsSync(filePath)) {
-			client.respondConflict('already exists');
 			return;
 		}
 
@@ -373,12 +399,12 @@ export class Crossword implements libInterface.ModuleInterface {
 
 		/* collect all of the data */
 		try {
-			const text: string = await client.receiveAllText(client.getMediaTypeCharset('utf-8'), maxFileSize);
+			const text: string = await client.receiveAllText(client.getMediaTypeCharset('utf-8'), MaxFileSize);
 
-			/* parse the data */
-			let parsed = null;
+			/* parse and validate the data */
+			let parsed: GameBoard | null = null;
 			try {
-				parsed = this.parseAndValidateGame(text!);
+				parsed = ParseAndValidateGameBoard(text, true);
 			} catch (e: any) {
 				client.error(`Error while parsing the game: ${e.message}`);
 				client.respondBadRequest(e.message);
@@ -387,27 +413,28 @@ export class Crossword implements libInterface.ModuleInterface {
 
 			/* serialize the data to the file and write it out */
 			try {
-				libFs.writeFileSync(filePath, JSON.stringify(parsed), { encoding: 'utf-8', flag: 'wx' });
+				await libFs.writeFile(filePath, JSON.stringify(parsed), { encoding: 'utf-8', flag: 'wx' });
+				client.respondOk('upload');
 			}
 			catch (e: any) {
+				/* check why the creating failed and log it accordingly */
 				libLog.Error(`Error while writing the game out: ${e.message}`);
-				client.respondInternalError('File-System error storing the game');
+				if (e.code === 'EEXIST')
+					client.respondConflict('already exists');
+				else
+					client.respondFileSystemError();
 				return;
 			}
-
-			/* validate the post content */
-			client.respondOk('upload');
 		}
 		catch (err: any) {
+			/* no need to notify the client, as the receive function will already have done so) */
 			client.error(`Error occurred while posting to [${filePath}]: ${err.message}`);
-			client.respondInternalError('Network issue regarding the post payload');
-			return;
 		}
 	}
-	private queryGames(client: libClient.HttpRequest): void {
+	private async queryGames(client: libClient.HttpRequest): Promise<void> {
 		let content: string[] = [];
 		try {
-			content = libFs.readdirSync(this.fileGames('.'));
+			content = await libFs.readdir(this.fileGames('.'));
 		}
 		catch (e: any) {
 			libLog.Error(`Error while reading directory content: ${e.message}`);
@@ -420,7 +447,7 @@ export class Crossword implements libInterface.ModuleInterface {
 			if (!name.endsWith('.json'))
 				continue;
 			let actual = name.slice(0, name.length - 5);
-			if (!actual.match(nameRegex) || actual.length > nameMaxLength)
+			if (!actual.match(NameRegex) || actual.length > NameMaxLength)
 				continue;
 			out.push(name.slice(0, name.length - 5));
 		}
@@ -428,22 +455,33 @@ export class Crossword implements libInterface.ModuleInterface {
 		/* return them to the request */
 		client.respondText(JSON.stringify(out), 'json');
 	}
-	private acceptWebSocket(client: libClient.ClientSocket, name: string): void {
+	private async acceptWebSocket(client: libClient.ClientSocket, name: string): Promise<void> {
 		client.log(`Handling WebSocket to: [${name}]`);
 		const filePath = this.fileGames(`${name}.json`);
-
-		/* check if the game exists */
-		if (!libFs.existsSync(filePath)) {
-			client.send(JSON.stringify('unknown-game'));
-			client.close();
-			return;
-		}
 
 		/* check if the game-state for the given name has already been set-up */
 		if (!(name in this.gameStates))
 			this.gameStates[name] = new ActiveGame(filePath);
-		this.gameStates[name].register(client);
+		const game = this.gameStates[name];
+
+		/* register the client to the game (to prevent it from being removed) */
+		game.register(client);
 		client.log(`Registered websocket to [${name}]`);
+
+		/* wait for the game data to load and check if the file was found */
+		const loadState: GameLoadState = await game.waitOnGame();
+		if (loadState != GameLoadState.valid) {
+			/* drop the client again from the game */
+			game.drop(client, () => {
+				if (this.gameStates[name] === game)
+					delete this.gameStates[name];
+			});
+
+			/* notify the client about the game state */
+			client.send(JSON.stringify(loadState == GameLoadState.doesNotExist ? 'unknown-game' : 'corrupted-game'));
+			client.close();
+			return;
+		}
 
 		/* define the alive callback */
 		let isAlive = true, aliveInterval: NodeJS.Timeout | null = null;
@@ -463,7 +501,7 @@ export class Crossword implements libInterface.ModuleInterface {
 					queueAliveCheck(false);
 					client.ping();
 				}
-			}, pingTimeout);
+			}, PingTimeout);
 		};
 
 		/* initiate the alive-check */
@@ -471,11 +509,16 @@ export class Crossword implements libInterface.ModuleInterface {
 
 		/* register the web-socket callbacks */
 		client.onpong = () => queueAliveCheck(true);
-		client.onclose = () => {
-			if (!this.gameStates[name].drop(client))
-				delete this.gameStates[name];
+		client.onclose = async () => {
+			/* clear the alive ping timeout */
 			if (aliveInterval != null)
 				clearTimeout(aliveInterval);
+
+			/* try to drop the game and check if it should be removed from the active games */
+			game.drop(client, () => {
+				if (this.gameStates[name] === game)
+					delete this.gameStates[name];
+			});
 			client.log(`Socket disconnected`);
 		};
 		client.ondata = (data) => {
@@ -483,14 +526,14 @@ export class Crossword implements libInterface.ModuleInterface {
 
 			/* parse the data */
 			try {
-				let parsed = JSON.parse(data.toString('utf-8'));
+				const parsed: any = JSON.parse(data.toString('utf-8'));
 				client.log(`Received for socket: ${parsed.cmd}`);
 
 				/* handle the command */
 				if (parsed.cmd == 'name' && typeof parsed.name == 'string')
-					this.gameStates[name].updateName(client, parsed.name);
+					game.updateName(client, parsed.name);
 				else if (parsed.cmd == 'update')
-					this.gameStates[name].updateGrid(client, parsed.data);
+					game.updateGrid(client, parsed.data);
 			} catch (e: any) {
 				client.error(`Failed to parse web-socket response: ${e.message}`);
 				client.close();
@@ -498,7 +541,7 @@ export class Crossword implements libInterface.ModuleInterface {
 		};
 
 		/* send the initial state to the socket */
-		this.gameStates[name].notifySingle(client);
+		game.notifySingle(client);
 	}
 	private async fetchBody(client: libClient.HttpRequest, path: string): Promise<string | null> {
 		const fullPath = this.fileStatic(path);
@@ -516,7 +559,7 @@ export class Crossword implements libInterface.ModuleInterface {
 		}
 		catch (err: any) {
 			client.error(`Failed to read content [${fullPath}]: ${err.message}`);
-			client.respondInternalError('File operation failed');
+			client.respondFileSystemError();
 			return null;
 		}
 	}
@@ -566,7 +609,7 @@ export class Crossword implements libInterface.ModuleInterface {
 		client.respondHtml(page, libClient.StatusCode.Ok);
 
 		/* add the required page headers and load the content from cache (prevent
-	*	user-zooming as this breaks viewport handling for keyboard-detection) */
+		*	user-zooming as this breaks viewport handling for keyboard-detection) */
 		page.head += b.Meta('viewport', 'width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no');
 		page.head += b.Title('Crossword Editor');
 		page.head += b.LoadStyle(client.makePath('/style.css'));
@@ -618,7 +661,7 @@ export class Crossword implements libInterface.ModuleInterface {
 
 		/* extract the name and validate it (return with not-found as the entire endpoint is owned) */
 		let name = client.path.slice(4);
-		if (name.match(nameRegex) && name.length <= nameMaxLength) {
+		if (name.match(NameRegex) && name.length <= NameMaxLength) {
 			if (client.tryAcceptWebSocket((ws) => this.acceptWebSocket(ws, name)))
 				return;
 		}
