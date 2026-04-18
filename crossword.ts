@@ -20,17 +20,17 @@ interface GridCell {
 	certain: boolean;
 	author: string;
 	time: number;
-};
+}
 interface GameBoard {
 	width: number;
 	height: number;
 	grid: GridCell[];
-};
+}
 interface GameState extends GameBoard {
 	failed: boolean;
 	names: string[];
 	online: string[];
-};
+}
 
 class ActiveGame {
 	private ws: Map<libClient.ClientSocket, string>;
@@ -274,7 +274,7 @@ class ActiveGame {
 	public notifySingle(ws: libClient.ClientSocket): void {
 		this.notifySingleId(ws);
 	}
-};
+}
 
 export class Crossword implements libInterface.ModuleInterface {
 	private fileStatic: (path: string) => string;
@@ -586,11 +586,11 @@ export class Crossword implements libInterface.ModuleInterface {
 
 		/* check if its a redirection and forward it accordingly */
 		if (client.path == '/' || client.path == '/main')
-			return client.respondRedirect(client.makePath('/main.html'));
+			return client.respondTemporaryRedirect(client.makePath('/main.html'));
 		if (client.path == '/editor')
-			return client.respondRedirect(client.makePath('/editor.html'));
+			return client.respondTemporaryRedirect(client.makePath('/editor.html'));
 		if (client.path == '/play')
-			return client.respondRedirect(client.makePath('/play.html'));
+			return client.respondTemporaryRedirect(client.makePath('/play.html'));
 
 		/* check if the games are queried */
 		if (client.path == '/games')
@@ -625,4 +625,4 @@ export class Crossword implements libInterface.ModuleInterface {
 		client.log(`Invalid request for web-socket point for game [${name}]`);
 		client.respondNotFound();
 	}
-};
+}

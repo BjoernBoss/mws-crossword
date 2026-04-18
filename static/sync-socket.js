@@ -194,4 +194,4 @@ class SyncSocket {
 			this._failed(true);
 		}
 	}
-};
+}
