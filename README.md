@@ -2,20 +2,55 @@
 ![TypeScript](https://img.shields.io/badge/language-TypeScript-blue?style=flat-square)
 [![License](https://img.shields.io/badge/license-BSD--3--Clause-brightgreen?style=flat-square)](LICENSE.txt)
 
-This repository is designed to be used with the [`MWS-Base`](https://github.com/BjoernBoss/mws-base.git).
+A collaborative crossword module for [`MWS-Base`](https://github.com/BjoernBoss/mws-base.git). Players can create, edit, and solve crossword puzzles together in real time using WebSockets.
 
-It provides an interactive way to create crosswords, which are stored in a given `data-path` (as given to the constructor of the application), to preserve them across reboots. Further, it allows to work on the crosswords in tandem, by making use of `WebSockets`.
+Game state is stored as JSON files in a configurable data directory and persists across server restarts. All active sessions are managed by the `Crossword` object; sharing it across multiple ports gives each port access to the same game state and player base.
 
-All active sessions are managed by the created `Crossword` object. Sharing this object across multiple listened ports will therefore ensure each port shares a common player base.
+## Setup
+Clone into the modules directory of an existing MWS-Base installation:
 
-## Using the Module
-To use this module, setup the `mws-base`. Then simply clone this repository into the modules directory:
+    $ git clone https://github.com/BjoernBoss/mws-crossword.git modules/crossword
 
-	$ git clone https://github.com/BjoernBoss/mws-crossword.git modules/crossword
-
-Afterwards, build the server, and construct this module in the `setup.js Run` method as:
+Register the module in `modules/setup.js`:
 
 ```JavaScript
-const m = await import("crossword/crossword.js");
-server.listenHttp(93, new m.Crossword('path/to/crossword/data'), null);
+export async function Run(server) {
+    try {
+        const crossword = await import("crossword/crossword.js");
+        server.listenHttp(93, new crossword.Crossword('path/to/crossword/data'), (host) => host == 'localhost');
+    }
+    catch (e) {
+        throw new Error(`Failed to load module: ${e.message}`);
+    }
+}
 ```
+
+Then just build and run the server as usual.
+
+## HTTP Endpoints
+| Method | Path | Description |
+|---|---|---|
+| GET | `/` | Redirects to `/main.html` |
+| GET | `/main.html` | Game lobby: list, create, and delete crosswords |
+| GET | `/play.html` | Play/solve a crossword collaboratively |
+| GET | `/editor.html` | Create a new crossword layout |
+| GET | `/games` | JSON array of available game names |
+| POST | `/game/{name}` | Create a new game (JSON body with `width`, `height`, `grid`) |
+| DELETE | `/game/{name}` | Delete an existing game |
+| GET | `/*.css`, `/*.js` | Static assets |
+| GET | `/ws/{name}` | Endpoint for the WebSocket to join a game session |
+
+## WebSocket Protocol
+Upon each connection established to a known crossword game, the WebSocket clients can give themselves a name, and then push game updates. The game will notify all connected clients upon game changes. Should the game not exist, be corrupted, or be removed, the server will respond with short descriptive error identifiers, and then discard any further game state update requests.
+
+## Game Rules
+ - Grid dimensions: 1x1 to 64x64
+ - Game names: alphanumeric with hyphens, dots, and underscores (max 256 characters)
+ - Characters: uppercase A-Z only (lowercase input is uppercased; non-letter input is rejected)
+ - Solid cells cannot be modified
+ - Unnamed players cannot update the grid
+ - Older timestamps are ignored (conflict resolution)
+- Max upload size: 100 KB
+
+## Persistence
+Games are stored as JSON files (`{name}.json`) in the data directory. Writebacks are debounced by 60 seconds after the last change. When all clients disconnect, any pending changes are flushed immediately before the game is unloaded. A retention timer keeps the game in memory briefly to handle reconnections. Writebacks use a temporary file (`{name}.json.upload`) and atomic rename to prevent corruption.
