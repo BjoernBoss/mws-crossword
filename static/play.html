@@ -303,6 +303,10 @@
 				_state.sock.error(`Game [${_state.game}] is corrupted on server!`);
 				return;
 			}
+			else if (data === 'dropped-game') {
+				_state.sock.error(`Game [${_state.game}] was removed from the server!`);
+				return;
+			}
 
 			/* check if the server has failed (only notify once per failure) */
 			if (!data.failed)
