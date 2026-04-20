@@ -2,6 +2,7 @@
 /* Copyright (c) 2025-2026 Bjoern Boss Henrichsen */
 import * as libInterface from "core/interface.js";
 import * as libClient from "core/client.js";
+import * as libRequest from "core/request.js";
 import * as libLog from "core/log.js";
 import * as libLocation from "core/location.js";
 import * as libBuilder from "core/builder.js";
@@ -513,14 +514,14 @@ export class Crossword implements libInterface.ModuleInterface {
 		for (const name of content) {
 			if (!name.endsWith('.json'))
 				continue;
-			let actual = name.slice(0, name.length - 5);
+			const actual = name.slice(0, name.length - 5);
 			if (!actual.match(NAME_REGEX) || actual.length > NAME_MAX_LENGTH)
 				continue;
-			out.push(name.slice(0, name.length - 5));
+			out.push(actual);
 		}
 
 		/* return them to the request */
-		client.respondText(JSON.stringify(out), 'json');
+		client.respondText(JSON.stringify(out), libRequest.JsonType);
 	}
 	private async acceptWebSocket(client: libClient.ClientSocket, name: string): Promise<void> {
 		client.log(`Handling WebSocket to: [${name}]`);
@@ -632,7 +633,7 @@ export class Crossword implements libInterface.ModuleInterface {
 		if (body == null)
 			return;
 		const page = new libBuilder.HtmlPage('en', '', b.Embed(body));
-		client.respondHtml(page, libClient.StatusCode.Ok);
+		client.respondHtml(page, libRequest.StatusCode.Ok);
 
 		/* add the required page headers and load the content from cache */
 		page.head += b.Meta('viewport', 'width=device-width, initial-scale=1');
@@ -648,7 +649,7 @@ export class Crossword implements libInterface.ModuleInterface {
 		if (body == null)
 			return;
 		const page = new libBuilder.HtmlPage('en', '', b.Embed(body));
-		client.respondHtml(page, libClient.StatusCode.Ok);
+		client.respondHtml(page, libRequest.StatusCode.Ok);
 
 		/* add the required page headers and load the content from cache (prevent
 		*	user-zooming as this breaks viewport handling for keyboard-detection) */
@@ -667,7 +668,7 @@ export class Crossword implements libInterface.ModuleInterface {
 		if (body == null)
 			return;
 		const page = new libBuilder.HtmlPage('en', '', b.Embed(body));
-		client.respondHtml(page, libClient.StatusCode.Ok);
+		client.respondHtml(page, libRequest.StatusCode.Ok);
 
 		/* add the required page headers and load the content from cache (prevent
 		*	user-zooming as this breaks viewport handling for keyboard-detection) */
@@ -710,7 +711,7 @@ export class Crossword implements libInterface.ModuleInterface {
 		if (client.path.toLowerCase().endsWith('.html'))
 			return;
 
-		/* respond to the request by trying to server the file */
+		/* respond to the request by trying to serve the file */
 		client.tryRespondFile(this.fileStatic(client.path));
 	}
 	public async upgrade(client: libClient.HttpUpgrade): Promise<void> {
