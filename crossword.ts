@@ -15,6 +15,7 @@ const GRID_DIMENSIONS = { min: 1, max: 64 };
 const MAX_FILE_SIZE = 100_000;
 const PING_TIMEOUT = 60_000;
 const WRITE_BACK_DELAY_MS = 60_000;
+const Logger: libLog.LogModule = new libLog.LogModule('Crossword');
 
 interface GridCell {
 	solid: boolean;
@@ -137,15 +138,15 @@ class ActiveGame {
 
 		/* try to read the game state */
 		try {
-			libLog.Log(`Loading game [${this.filePath}]...`);
+			Logger.Log(`Loading game [${this.filePath}]...`);
 			data = await libFs.readFile(this.filePath, { encoding: 'utf-8' });
 		}
 		catch (err: any) {
 			if (err.code === 'ENOENT') {
-				libLog.Error(`Game [${this.filePath}] does not exist: ${err.message}`);
+				Logger.Error(`Game [${this.filePath}] does not exist: ${err.message}`);
 				return GameLoadState.doesNotExist;
 			}
-			libLog.Error(`Failed to read the game [${this.filePath}] state: ${err.message}`);
+			Logger.Error(`Failed to read the game [${this.filePath}] state: ${err.message}`);
 			return GameLoadState.corrupted;
 		}
 
@@ -155,7 +156,7 @@ class ActiveGame {
 			return GameLoadState.valid;
 		}
 		catch (err: any) {
-			libLog.Error(`Corrupted game state found [${this.filePath}]: ${err.message}`);
+			Logger.Error(`Corrupted game state found [${this.filePath}]: ${err.message}`);
 			return GameLoadState.corrupted;
 		}
 	}
@@ -208,8 +209,8 @@ class ActiveGame {
 		/* check the game should be unloaded */
 		if (this.write.retention) {
 			if (this.write.failed)
-				libLog.Warning(`Game state is lost as write-back to [${this.filePath}] failed`);
-			libLog.Log(`Unloading game [${this.filePath}]...`);
+				Logger.Warning(`Game state is lost as write-back to [${this.filePath}] failed`);
+			Logger.Log(`Unloading game [${this.filePath}]...`);
 			return this.dropSelf(this);
 		}
 		this.write.retention = true;
@@ -229,7 +230,7 @@ class ActiveGame {
 			const tempPath = `${this.filePath}.upload`;
 			let written = false;
 			try {
-				libLog.Log(`Uploading crossword via temporary file [${tempPath}] for [${this.filePath}]`);
+				Logger.Trace(`Uploading crossword via temporary file [${tempPath}] for [${this.filePath}]`);
 				await libFs.writeFile(tempPath, currentState, { encoding: 'utf-8' });
 				written = true;
 
@@ -239,16 +240,16 @@ class ActiveGame {
 			}
 			catch (e: any) {
 				if (written)
-					libLog.Error(`Failed to replace original file [${this.filePath}]: ${e.message}`);
+					Logger.Error(`Failed to replace original file [${this.filePath}]: ${e.message}`);
 				else
-					libLog.Error(`Failed to write to temporary file [${tempPath}]: ${e.message}`);
+					Logger.Error(`Failed to write to temporary file [${tempPath}]: ${e.message}`);
 
 				/* try to remove the temporary file */
 				try {
 					await libFs.unlink(tempPath);
 				}
 				catch (e: any) {
-					libLog.Error(`Failed to remove temporary file [${tempPath}]: ${e.message}`);
+					Logger.Error(`Failed to remove temporary file [${tempPath}]: ${e.message}`);
 				}
 
 				/* notify about the failed write-back */
@@ -443,13 +444,13 @@ export class Crossword implements libInterface.ModuleInterface {
 			/* remove the game file itself */
 			try {
 				await libFs.unlink(filePath);
-				libLog.Log(`Game file [${filePath}] deleted successfully`);
+				Logger.Log(`Game file [${filePath}] deleted successfully`);
 				client.respondOk('delete');
 			}
 
 			/* check if the removal failed and log it accordingly */
 			catch (err: any) {
-				libLog.Error(`Error while removing file [${filePath}]: ${err.message}`);
+				Logger.Error(`Error while removing file [${filePath}]: ${err.message}`);
 				if (err.code === 'ENOENT')
 					client.respondNotFound();
 				else
@@ -459,7 +460,7 @@ export class Crossword implements libInterface.ModuleInterface {
 		}
 
 		/* validate the content type */
-		if (client.ensureMediaType(['application/json']) == null)
+		if (client.ensureMediaType([libRequest.Media.Json]) == null)
 			return;
 
 		/* collect all of the data (failure will automatically be responded to by the receive function) */
@@ -490,7 +491,7 @@ export class Crossword implements libInterface.ModuleInterface {
 
 		/* check why the creating failed and log it accordingly */
 		catch (err: any) {
-			libLog.Error(`Error while writing the game [${filePath}] out: ${err.message}`);
+			Logger.Error(`Error while writing the game [${filePath}] out: ${err.message}`);
 			if (err.code === 'EEXIST')
 				client.respondConflict('already exists');
 			else
@@ -503,14 +504,14 @@ export class Crossword implements libInterface.ModuleInterface {
 			content = await libFs.readdir(this.fileGames('.'));
 		}
 		catch (err: any) {
-			libLog.Error(`Error while reading directory content: ${err.message}`);
+			Logger.Error(`Error while reading directory content: ${err.message}`);
 			client.respondFileSystemError();
 			return;
 		}
 		let out = [];
 
 		/* collect them all out */
-		libLog.Log(`Querying list of all registered games: [${content}]`);
+		Logger.Trace(`Querying list of all registered games: [${content}]`);
 		for (const name of content) {
 			if (!name.endsWith('.json'))
 				continue;
@@ -521,7 +522,7 @@ export class Crossword implements libInterface.ModuleInterface {
 		}
 
 		/* return them to the request */
-		client.respondText(JSON.stringify(out), libRequest.JsonType);
+		client.respondAnyText(JSON.stringify(out), { media: libRequest.Media.Json });
 	}
 	private async acceptWebSocket(client: libClient.ClientSocket, name: string): Promise<void> {
 		client.log(`Handling WebSocket to: [${name}]`);
@@ -633,7 +634,7 @@ export class Crossword implements libInterface.ModuleInterface {
 		if (body == null)
 			return;
 		const page = new libBuilder.HtmlPage('en', '', b.Embed(body));
-		client.respondHtml(page, libRequest.StatusCode.Ok);
+		client.sendHtml(page, libRequest.Status.Ok);
 
 		/* add the required page headers and load the content from cache */
 		page.head += b.Meta('viewport', 'width=device-width, initial-scale=1');
@@ -649,7 +650,7 @@ export class Crossword implements libInterface.ModuleInterface {
 		if (body == null)
 			return;
 		const page = new libBuilder.HtmlPage('en', '', b.Embed(body));
-		client.respondHtml(page, libRequest.StatusCode.Ok);
+		client.sendHtml(page, libRequest.Status.Ok);
 
 		/* add the required page headers and load the content from cache (prevent
 		*	user-zooming as this breaks viewport handling for keyboard-detection) */
@@ -668,7 +669,7 @@ export class Crossword implements libInterface.ModuleInterface {
 		if (body == null)
 			return;
 		const page = new libBuilder.HtmlPage('en', '', b.Embed(body));
-		client.respondHtml(page, libRequest.StatusCode.Ok);
+		client.sendHtml(page, libRequest.Status.Ok);
 
 		/* add the required page headers and load the content from cache (prevent
 		*	user-zooming as this breaks viewport handling for keyboard-detection) */
