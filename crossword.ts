@@ -634,7 +634,7 @@ export class Crossword implements libInterface.ModuleInterface {
 		if (body == null)
 			return;
 		const page = new libBuilder.HtmlPage('en', '', b.Embed(body));
-		client.sendHtml(page, libRequest.Status.Ok);
+		client.respondHtml(page, libRequest.Status.Ok);
 
 		/* add the required page headers and load the content from cache */
 		page.head += b.Meta('viewport', 'width=device-width, initial-scale=1');
@@ -650,7 +650,7 @@ export class Crossword implements libInterface.ModuleInterface {
 		if (body == null)
 			return;
 		const page = new libBuilder.HtmlPage('en', '', b.Embed(body));
-		client.sendHtml(page, libRequest.Status.Ok);
+		client.respondHtml(page, libRequest.Status.Ok);
 
 		/* add the required page headers and load the content from cache (prevent
 		*	user-zooming as this breaks viewport handling for keyboard-detection) */
@@ -669,7 +669,7 @@ export class Crossword implements libInterface.ModuleInterface {
 		if (body == null)
 			return;
 		const page = new libBuilder.HtmlPage('en', '', b.Embed(body));
-		client.sendHtml(page, libRequest.Status.Ok);
+		client.respondHtml(page, libRequest.Status.Ok);
 
 		/* add the required page headers and load the content from cache (prevent
 		*	user-zooming as this breaks viewport handling for keyboard-detection) */
