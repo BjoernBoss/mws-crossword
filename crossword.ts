@@ -13,9 +13,8 @@ const NAME_REGEX = '^[a-zA-Z0-9]([-_.]?[a-zA-Z0-9])*$';
 const NAME_MAX_LENGTH = 256;
 const GRID_DIMENSIONS = { min: 1, max: 64 };
 const MAX_FILE_SIZE = 100_000;
-const PING_TIMEOUT = 60_000;
 const WRITE_BACK_DELAY_MS = 60_000;
-const Logger: libLog.LogModule = new libLog.LogModule('Crossword');
+const logger = libLog.Logger('crossword');
 
 interface GridCell {
 	solid: boolean;
@@ -138,15 +137,15 @@ class ActiveGame {
 
 		/* try to read the game state */
 		try {
-			Logger.Log(`Loading game [${this.filePath}]...`);
+			logger.log(`Loading game [${this.filePath}]...`);
 			data = await libFs.readFile(this.filePath, { encoding: 'utf-8' });
 		}
 		catch (err: any) {
 			if (err.code === 'ENOENT') {
-				Logger.Error(`Game [${this.filePath}] does not exist: ${err.message}`);
+				logger.error(`Game [${this.filePath}] does not exist: ${err.message}`);
 				return GameLoadState.doesNotExist;
 			}
-			Logger.Error(`Failed to read the game [${this.filePath}] state: ${err.message}`);
+			logger.error(`Failed to read the game [${this.filePath}] state: ${err.message}`);
 			return GameLoadState.corrupted;
 		}
 
@@ -156,7 +155,7 @@ class ActiveGame {
 			return GameLoadState.valid;
 		}
 		catch (err: any) {
-			Logger.Error(`Corrupted game state found [${this.filePath}]: ${err.message}`);
+			logger.error(`Corrupted game state found [${this.filePath}]: ${err.message}`);
 			return GameLoadState.corrupted;
 		}
 	}
@@ -209,8 +208,8 @@ class ActiveGame {
 		/* check the game should be unloaded */
 		if (this.write.retention) {
 			if (this.write.failed)
-				Logger.Warning(`Game state is lost as write-back to [${this.filePath}] failed`);
-			Logger.Log(`Unloading game [${this.filePath}]...`);
+				logger.warning(`Game state is lost as write-back to [${this.filePath}] failed`);
+			logger.log(`Unloading game [${this.filePath}]...`);
 			return this.dropSelf(this);
 		}
 		this.write.retention = true;
@@ -230,7 +229,7 @@ class ActiveGame {
 			const tempPath = `${this.filePath}.upload`;
 			let written = false;
 			try {
-				Logger.Trace(`Uploading crossword via temporary file [${tempPath}] for [${this.filePath}]`);
+				logger.trace(`Uploading crossword via temporary file [${tempPath}] for [${this.filePath}]`);
 				await libFs.writeFile(tempPath, currentState, { encoding: 'utf-8' });
 				written = true;
 
@@ -240,16 +239,16 @@ class ActiveGame {
 			}
 			catch (e: any) {
 				if (written)
-					Logger.Error(`Failed to replace original file [${this.filePath}]: ${e.message}`);
+					logger.error(`Failed to replace original file [${this.filePath}]: ${e.message}`);
 				else
-					Logger.Error(`Failed to write to temporary file [${tempPath}]: ${e.message}`);
+					logger.error(`Failed to write to temporary file [${tempPath}]: ${e.message}`);
 
 				/* try to remove the temporary file */
 				try {
 					await libFs.unlink(tempPath);
 				}
 				catch (e: any) {
-					Logger.Error(`Failed to remove temporary file [${tempPath}]: ${e.message}`);
+					logger.error(`Failed to remove temporary file [${tempPath}]: ${e.message}`);
 				}
 
 				/* notify about the failed write-back */
@@ -316,14 +315,14 @@ class ActiveGame {
 	public updateGrid(client: libClient.ClientSocket, grid: any): void {
 		/* ensure that a grid exists */
 		if (this.data == null) {
-			client.log(`Discarding grid update for corrupted load [${this.filePath}]`);
+			client.warning(`Discarding grid update for corrupted load [${this.filePath}]`);
 			this.notifySingle(client);
 			return;
 		}
 
 		/* ensure that the player has a name */
 		if (this.ws.get(client)!.length == 0) {
-			client.log(`Discarding grid update of unnamed player [${this.filePath}]`);
+			client.warning(`Discarding grid update of unnamed player [${this.filePath}]`);
 			this.notifySingle(client);
 			return;
 		}
@@ -340,7 +339,7 @@ class ActiveGame {
 
 		/* check if the data are not dirty */
 		if (!dirty) {
-			client.log(`Discarding empty grid update of [${this.filePath}]`);
+			client.trace(`Discarding empty grid update of [${this.filePath}]`);
 			this.notifySingle(client);
 			return;
 		}
@@ -422,7 +421,7 @@ export class Crossword implements libInterface.ModuleInterface {
 
 	private async modifyGame(client: libClient.HttpRequest): Promise<void> {
 		/* validate the method */
-		const method = client.ensureMethod(['POST', 'DELETE']);
+		const method = client.ensureMethod(['POST', 'DELETE'], false);
 		if (method == null)
 			return;
 
@@ -432,7 +431,7 @@ export class Crossword implements libInterface.ModuleInterface {
 			client.respondNotFound();
 			return;
 		}
-		client.log(`Handling Game: [${name}] as [${method}]`);
+		client.trace(`Handling Game: [${name}] with [${method}]`);
 		const filePath = this.fileGames(`${name}.json`);
 
 		/* check if the game is being removed */
@@ -444,13 +443,13 @@ export class Crossword implements libInterface.ModuleInterface {
 			/* remove the game file itself */
 			try {
 				await libFs.unlink(filePath);
-				Logger.Log(`Game file [${filePath}] deleted successfully`);
+				logger.log(`Game file [${filePath}] deleted successfully`);
 				client.respondOk('delete');
 			}
 
 			/* check if the removal failed and log it accordingly */
 			catch (err: any) {
-				Logger.Error(`Error while removing file [${filePath}]: ${err.message}`);
+				logger.error(`Error while removing file [${filePath}]: ${err.message}`);
 				if (err.code === 'ENOENT')
 					client.respondNotFound();
 				else
@@ -491,7 +490,7 @@ export class Crossword implements libInterface.ModuleInterface {
 
 		/* check why the creating failed and log it accordingly */
 		catch (err: any) {
-			Logger.Error(`Error while writing the game [${filePath}] out: ${err.message}`);
+			logger.error(`Error while writing the game [${filePath}] out: ${err.message}`);
 			if (err.code === 'EEXIST')
 				client.respondConflict('already exists');
 			else
@@ -504,14 +503,14 @@ export class Crossword implements libInterface.ModuleInterface {
 			content = await libFs.readdir(this.fileGames('.'));
 		}
 		catch (err: any) {
-			Logger.Error(`Error while reading directory content: ${err.message}`);
+			logger.error(`Error while reading directory content: ${err.message}`);
 			client.respondFileSystemError();
 			return;
 		}
 		let out = [];
 
 		/* collect them all out */
-		Logger.Trace(`Querying list of all registered games: [${content}]`);
+		logger.trace(`Querying list of all registered games: [${content}]`);
 		for (const name of content) {
 			if (!name.endsWith('.json'))
 				continue;
@@ -525,7 +524,7 @@ export class Crossword implements libInterface.ModuleInterface {
 		client.respondAnyText(JSON.stringify(out), { media: libRequest.Media.Json });
 	}
 	private async acceptWebSocket(client: libClient.ClientSocket, name: string): Promise<void> {
-		client.log(`Handling WebSocket to: [${name}]`);
+		client.trace(`Handling WebSocket to: [${name}]`);
 		const filePath = this.fileGames(`${name}.json`);
 
 		/* check if the game-state for the given name has already been set-up */
@@ -537,10 +536,11 @@ export class Crossword implements libInterface.ModuleInterface {
 		}
 		const game = this.gameStates[name];
 
-		/* register the client to the game (to prevent it from being removed) */
+		/* register the client to the game to prevent it from being removed
+		*	(shift the game-name onto the log, but never unshift it again) */
 		game.register(client);
-		client.pushLog(name);
-		client.log(`Registered websocket to [${name}]`);
+		client.shiftLog(name);
+		client.log('Registered websocket to game');
 
 		/* wait for the game data to load and check if the file was found */
 		const loadState: GameLoadState = await game.waitOnGame();
@@ -552,45 +552,15 @@ export class Crossword implements libInterface.ModuleInterface {
 			return;
 		}
 
-		/* define the alive callback */
-		let isAlive = true, aliveInterval: NodeJS.Timeout | null = null;
-		const queueAliveCheck = function (alive: boolean): void {
-			/* update the alive-flag and kill the old timer */
-			isAlive = alive;
-			if (aliveInterval != null)
-				clearTimeout(aliveInterval);
-
-			/* queue the check callback */
-			aliveInterval = setTimeout(function () {
-				if (!isAlive) {
-					client.close();
-					aliveInterval = null;
-				}
-				else {
-					queueAliveCheck(false);
-					client.ping();
-				}
-			}, PING_TIMEOUT);
-		};
-
-		/* initiate the alive-check */
-		queueAliveCheck(true);
-
 		/* register the web-socket callbacks */
-		client.onpong = () => queueAliveCheck(true);
 		client.onclose = async () => {
-			/* clear the alive ping timeout and remove it from the game */
-			if (aliveInterval != null)
-				clearTimeout(aliveInterval);
 			game.drop(client);
 			client.log(`Socket disconnected`);
 		};
 		client.ondata = (data) => {
-			queueAliveCheck(true);
-
 			try {
 				const parsed: any = JSON.parse(data.toString('utf-8'));
-				client.log(`Received for socket: ${parsed.cmd}`);
+				client.trace(`Received for socket: ${parsed.cmd}`);
 
 				/* dispatch the client request accordingly */
 				if (parsed.cmd == 'name' && typeof parsed.name == 'string')
@@ -680,14 +650,14 @@ export class Crossword implements libInterface.ModuleInterface {
 	}
 
 	public async request(client: libClient.HttpRequest): Promise<void> {
-		client.log(`Game handler for [${client.path}]`);
+		client.trace(`Game handler for [${client.path}]`);
 
 		/* check if a game is being manipulated */
 		if (client.path.startsWith('/game/'))
 			return this.modifyGame(client);
 
 		/* all other endpoints only support 'getting' */
-		if (client.ensureMethod(['GET']) == null)
+		if (client.ensureMethod(['GET'], false) == null)
 			return;
 
 		/* check if its a redirection and forward it accordingly */
@@ -713,10 +683,10 @@ export class Crossword implements libInterface.ModuleInterface {
 			return;
 
 		/* respond to the request by trying to serve the file */
-		client.tryRespondFile(this.fileStatic(client.path));
+		await client.tryRespondFile(this.fileStatic(client.path));
 	}
 	public async upgrade(client: libClient.HttpUpgrade): Promise<void> {
-		client.log(`Game handler for [${client.path}]`);
+		client.trace(`Game handler for [${client.path}]`);
 
 		/* check if a web-socket is connecting */
 		if (!client.path.startsWith('/ws/'))
