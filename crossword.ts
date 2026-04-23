@@ -9,12 +9,13 @@ import * as libBuilder from "core/builder.js";
 import * as libCache from "core/cache.js";
 import * as libFs from "fs/promises";
 
+const logger = libLog.Logger('crossword');
+
 const NAME_REGEX = '^[a-zA-Z0-9]([-_.]?[a-zA-Z0-9])*$';
 const NAME_MAX_LENGTH = 256;
 const GRID_DIMENSIONS = { min: 1, max: 64 };
 const MAX_FILE_SIZE = 100_000;
 const WRITE_BACK_DELAY_MS = 60_000;
-const logger = libLog.Logger('crossword');
 
 interface GridCell {
 	solid: boolean;
@@ -421,7 +422,7 @@ export class Crossword implements libInterface.ModuleInterface {
 
 	private async modifyGame(client: libClient.HttpRequest): Promise<void> {
 		/* validate the method */
-		const method = client.ensureMethod(['POST', 'DELETE'], false);
+		const method = client.ensureMethod(['POST', 'DELETE']);
 		if (method == null)
 			return;
 
@@ -586,6 +587,10 @@ export class Crossword implements libInterface.ModuleInterface {
 			return null;
 		}
 
+		/* check if this is a light build */
+		if (client.isHead)
+			return '';
+
 		/* read the file */
 		try {
 			return (await cached.readAsync()).toString('utf-8');
@@ -605,6 +610,8 @@ export class Crossword implements libInterface.ModuleInterface {
 			return;
 		const page = new libBuilder.HtmlPage('en', '', b.Embed(body));
 		client.respondHtml(page, libRequest.Status.Ok);
+		if (client.htmlLightBuild())
+			return;
 
 		/* add the required page headers and load the content from cache */
 		page.head += b.Meta('viewport', 'width=device-width, initial-scale=1');
@@ -621,6 +628,8 @@ export class Crossword implements libInterface.ModuleInterface {
 			return;
 		const page = new libBuilder.HtmlPage('en', '', b.Embed(body));
 		client.respondHtml(page, libRequest.Status.Ok);
+		if (client.htmlLightBuild())
+			return;
 
 		/* add the required page headers and load the content from cache (prevent
 		*	user-zooming as this breaks viewport handling for keyboard-detection) */
@@ -640,6 +649,8 @@ export class Crossword implements libInterface.ModuleInterface {
 			return;
 		const page = new libBuilder.HtmlPage('en', '', b.Embed(body));
 		client.respondHtml(page, libRequest.Status.Ok);
+		if (client.htmlLightBuild())
+			return;
 
 		/* add the required page headers and load the content from cache (prevent
 		*	user-zooming as this breaks viewport handling for keyboard-detection) */
@@ -657,7 +668,7 @@ export class Crossword implements libInterface.ModuleInterface {
 			return this.modifyGame(client);
 
 		/* all other endpoints only support 'getting' */
-		if (client.ensureMethod(['GET'], false) == null)
+		if (client.ensureMethod(['GET']) == null)
 			return;
 
 		/* check if its a redirection and forward it accordingly */
