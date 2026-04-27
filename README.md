@@ -14,12 +14,16 @@ Clone into the modules directory of an existing MWS-Base installation:
 Register the module in `modules/setup.js`:
 
 ```JavaScript
+import * as libInterface from "core/interface.js";
+
 export async function Run(server) {
     try {
         const crossword = await import("crossword/crossword.js");
-        server.listenHttp(93, new crossword.Crossword('path/to/crossword/data'), (host) => host == 'localhost');
-    }
-    catch (e) {
+        const dispatch = new libInterface.DispatchModule({
+            '/crossword': new crossword.Crossword('./local_data/crossword'),
+        });
+        server.listenHttp(8080, dispatch, (host) => host == 'localhost');
+    } catch (e) {
         throw new Error(`Failed to load module: ${e.message}`);
     }
 }
@@ -30,15 +34,15 @@ Then just build and run the server as usual.
 ## HTTP Endpoints
 | Method | Path | Description |
 |---|---|---|
-| GET | `/` | Redirects to `/main.html` |
-| GET | `/main.html` | Game lobby: list, create, and delete crosswords |
+| GET | `/` | Game lobby: list, create, and delete crosswords |
+| GET | `/editor`, `/play` | Redirect to corresponding `.html` page |
 | GET | `/play.html` | Play/solve a crossword collaboratively |
 | GET | `/editor.html` | Create a new crossword layout |
 | GET | `/games` | JSON array of available game names |
 | POST | `/game/{name}` | Create a new game (JSON body with `width`, `height`, `grid`) |
 | DELETE | `/game/{name}` | Delete an existing game |
 | GET | `/*.css`, `/*.js` | Static assets |
-| GET | `/ws/{name}` | Endpoint for the WebSocket to join a game session |
+| WebSocket | `/ws/{name}` | Join a game session |
 
 ## WebSocket Protocol
 Upon each connection established to a known crossword game, the WebSocket clients can give themselves a name, and then push game updates. The game will notify all connected clients upon game changes. Should the game not exist, be corrupted, or be removed, the server will respond with short descriptive error identifiers, and then discard any further game state update requests.

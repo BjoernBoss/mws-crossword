@@ -522,7 +522,7 @@ export class Crossword implements libInterface.ModuleInterface {
 		}
 
 		/* return them to the request */
-		client.respondAnyText(JSON.stringify(out), { media: libRequest.Media.Json });
+		client.respond(JSON.stringify(out), { media: libRequest.Media.Json });
 	}
 	private async acceptWebSocket(client: libClient.ClientSocket, name: string): Promise<void> {
 		client.trace(`Handling WebSocket to: [${name}]`);
@@ -602,6 +602,7 @@ export class Crossword implements libInterface.ModuleInterface {
 		}
 	}
 	private async buildMainPage(client: libClient.HttpRequest): Promise<void> {
+		const toPath = (path: string) => libCache.Immutable(client.makePath(path));
 		const b = libBuilder;
 
 		/* read the body */
@@ -609,17 +610,18 @@ export class Crossword implements libInterface.ModuleInterface {
 		if (body == null)
 			return;
 		const page = new libBuilder.HtmlPage('en', '', b.Embed(body));
-		client.respondHtml(page, libRequest.Status.Ok);
-		if (client.htmlLightBuild())
-			return;
+		if (client.isHead)
+			return client.respondHtml(page, { status: libRequest.Status.Ok });
 
 		/* add the required page headers and load the content from cache */
 		page.head += b.Meta('viewport', 'width=device-width, initial-scale=1');
 		page.head += b.Title('Crosswords!');
-		page.head += b.LoadStyle(client.makePath('/style.css'));
-		page.head += b.LoadScript(client.makePath('/notifier.js'));
+		page.head += b.LoadStyle(toPath('/style.css'));
+		page.head += b.LoadScript(toPath('/notifier.js'));
+		client.respondHtml(page, { status: libRequest.Status.Ok });
 	}
 	private async buildPlayPage(client: libClient.HttpRequest): Promise<void> {
+		const toPath = (path: string) => libCache.Immutable(client.makePath(path));
 		const b = libBuilder;
 
 		/* read the body */
@@ -627,20 +629,21 @@ export class Crossword implements libInterface.ModuleInterface {
 		if (body == null)
 			return;
 		const page = new libBuilder.HtmlPage('en', '', b.Embed(body));
-		client.respondHtml(page, libRequest.Status.Ok);
-		if (client.htmlLightBuild())
-			return;
+		if (client.isHead)
+			return client.respondHtml(page, { status: libRequest.Status.Ok });
 
 		/* add the required page headers and load the content from cache (prevent
 		*	user-zooming as this breaks viewport handling for keyboard-detection) */
 		page.head += b.Meta('viewport', 'width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no');
 		page.head += b.Title('Play Crossword!');
-		page.head += b.LoadStyle(client.makePath('/style.css'));
-		page.head += b.LoadScript(client.makePath('/notifier.js'));
-		page.head += b.LoadScript(client.makePath('/sync-socket.js'));
-		page.head += b.LoadScript(client.makePath('/grid.js'));
+		page.head += b.LoadStyle(toPath('/style.css'));
+		page.head += b.LoadScript(toPath('/notifier.js'));
+		page.head += b.LoadScript(toPath('/sync-socket.js'));
+		page.head += b.LoadScript(toPath('/grid.js'));
+		client.respondHtml(page, { status: libRequest.Status.Ok });
 	}
 	private async buildEditorPage(client: libClient.HttpRequest): Promise<void> {
+		const toPath = (path: string) => libCache.Immutable(client.makePath(path));
 		const b = libBuilder;
 
 		/* read the body */
@@ -648,16 +651,16 @@ export class Crossword implements libInterface.ModuleInterface {
 		if (body == null)
 			return;
 		const page = new libBuilder.HtmlPage('en', '', b.Embed(body));
-		client.respondHtml(page, libRequest.Status.Ok);
-		if (client.htmlLightBuild())
-			return;
+		if (client.isHead)
+			return client.respondHtml(page, { status: libRequest.Status.Ok });
 
 		/* add the required page headers and load the content from cache (prevent
 		*	user-zooming as this breaks viewport handling for keyboard-detection) */
 		page.head += b.Meta('viewport', 'width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no');
 		page.head += b.Title('Crossword Editor');
-		page.head += b.LoadStyle(client.makePath('/style.css'));
-		page.head += b.LoadScript(client.makePath('/grid.js'));
+		page.head += b.LoadStyle(toPath('/style.css'));
+		page.head += b.LoadScript(toPath('/grid.js'));
+		client.respondHtml(page, { status: libRequest.Status.Ok });
 	}
 
 	public async request(client: libClient.HttpRequest): Promise<void> {
@@ -672,8 +675,8 @@ export class Crossword implements libInterface.ModuleInterface {
 			return;
 
 		/* check if its a redirection and forward it accordingly */
-		if (client.path == '/' || client.path == '/main')
-			return client.respondTemporaryRedirect(client.makePath('/main.html'));
+		if (client.path == '/main' || client.path == '/main.html')
+			return client.respondTemporaryRedirect(client.makePath('/'));
 		if (client.path == '/editor')
 			return client.respondTemporaryRedirect(client.makePath('/editor.html'));
 		if (client.path == '/play')
@@ -684,7 +687,7 @@ export class Crossword implements libInterface.ModuleInterface {
 			return this.queryGames(client);
 
 		/* check if its one of the html endpoints and build them (discard any other requests) */
-		if (client.path == '/main.html')
+		if (client.path == '/')
 			return this.buildMainPage(client);
 		if (client.path == '/play.html')
 			return this.buildPlayPage(client);
@@ -708,8 +711,10 @@ export class Crossword implements libInterface.ModuleInterface {
 		if (name.match(NAME_REGEX) && name.length <= NAME_MAX_LENGTH) {
 			if (client.tryAcceptWebSocket((ws) => this.acceptWebSocket(ws, name)))
 				return;
+			client.respondBadRequest('Endpoint is designed for web-sockets');
 		}
+		else
+			client.respondNotFound();
 		client.log(`Invalid request for web-socket point for game [${name}]`);
-		client.respondNotFound();
 	}
 }
