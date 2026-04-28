@@ -226,37 +226,12 @@ class ActiveGame {
 		/* cache the current state to be serialized and mark the write-back as being processed */
 		const currentState: string = JSON.stringify(this.data);
 		this.write.active = new Promise(async (resolve) => {
-			/* try to write the data back to a temporary file */
-			const tempPath = `${this.filePath}.upload`;
-			let written = false;
-			try {
-				logger.trace(`Uploading crossword via temporary file [${tempPath}] for [${this.filePath}]`);
-				await libFs.writeFile(tempPath, currentState, { encoding: 'utf-8' });
-				written = true;
-
-				/* replace the existing file */
-				await libFs.rename(tempPath, this.filePath);
+			/* try to write the data back via a temporary file */
+			if (await libLocation.AtomicWrite(this.filePath, currentState, 'crossword', logger))
 				this.write.failed = false;
-			}
-			catch (e: any) {
-				if (written)
-					logger.error(`Failed to replace original file [${this.filePath}]: ${e.message}`);
-				else
-					logger.error(`Failed to write to temporary file [${tempPath}]: ${e.message}`);
-
-				/* try to remove the temporary file */
-				try {
-					await libFs.unlink(tempPath);
-				}
-				catch (e: any) {
-					logger.error(`Failed to remove temporary file [${tempPath}]: ${e.message}`);
-				}
-
-				/* notify about the failed write-back */
-				if (!this.write.failed) {
-					this.write.failed = true;
-					this.notifyAll();
-				}
+			else if (!this.write.failed) {
+				this.write.failed = true;
+				this.notifyAll();
 			}
 
 			/* mark the write-back as not active anymore */
@@ -580,16 +555,13 @@ export class Crossword implements libInterface.ModuleInterface {
 	private async fetchBody(client: libClient.HttpRequest, path: string): Promise<string | null> {
 		const fullPath = this.fileStatic(path);
 
-		/* look for the file */
-		const cached: libCache.Cached | null = libCache.Get(fullPath);
+		/* look for the file (will never be an immutable path; consider it stable) */
+		const cached: libCache.Cached | null = libCache.GetNormal(fullPath, true);
 		if (cached == null) {
 			client.error(`Failed to find content [${fullPath}]`);
+			client.respondFileSystemError();
 			return null;
 		}
-
-		/* check if this is a light build */
-		if (client.isHead)
-			return '';
 
 		/* read the file */
 		try {
@@ -609,11 +581,9 @@ export class Crossword implements libInterface.ModuleInterface {
 		const body: string | null = await this.fetchBody(client, '/main.html');
 		if (body == null)
 			return;
-		const page = new libBuilder.HtmlPage('en', '', b.Embed(body));
-		if (client.isHead)
-			return client.respondHtml(page, { status: libRequest.Status.Ok });
 
 		/* add the required page headers and load the content from cache */
+		const page = new libBuilder.HtmlPage('en', '', b.Embed(body));
 		page.head += b.Meta('viewport', 'width=device-width, initial-scale=1');
 		page.head += b.Title('Crosswords!');
 		page.head += b.LoadStyle(toPath('/style.css'));
@@ -628,12 +598,10 @@ export class Crossword implements libInterface.ModuleInterface {
 		const body: string | null = await this.fetchBody(client, '/play.html');
 		if (body == null)
 			return;
-		const page = new libBuilder.HtmlPage('en', '', b.Embed(body));
-		if (client.isHead)
-			return client.respondHtml(page, { status: libRequest.Status.Ok });
 
 		/* add the required page headers and load the content from cache (prevent
 		*	user-zooming as this breaks viewport handling for keyboard-detection) */
+		const page = new libBuilder.HtmlPage('en', '', b.Embed(body));
 		page.head += b.Meta('viewport', 'width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no');
 		page.head += b.Title('Play Crossword!');
 		page.head += b.LoadStyle(toPath('/style.css'));
@@ -650,12 +618,10 @@ export class Crossword implements libInterface.ModuleInterface {
 		const body: string | null = await this.fetchBody(client, '/editor.html');
 		if (body == null)
 			return;
-		const page = new libBuilder.HtmlPage('en', '', b.Embed(body));
-		if (client.isHead)
-			return client.respondHtml(page, { status: libRequest.Status.Ok });
 
 		/* add the required page headers and load the content from cache (prevent
 		*	user-zooming as this breaks viewport handling for keyboard-detection) */
+		const page = new libBuilder.HtmlPage('en', '', b.Embed(body));
 		page.head += b.Meta('viewport', 'width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no');
 		page.head += b.Title('Crossword Editor');
 		page.head += b.LoadStyle(toPath('/style.css'));
@@ -696,8 +662,8 @@ export class Crossword implements libInterface.ModuleInterface {
 		if (client.path.toLowerCase().endsWith('.html'))
 			return;
 
-		/* respond to the request by trying to serve the file */
-		await client.tryRespondFile(this.fileStatic(client.path));
+		/* respond to the request by trying to serve the file (all files are considered stable) */
+		await client.tryRespondFile(this.fileStatic(client.path), true);
 	}
 	public async upgrade(client: libClient.HttpUpgrade): Promise<void> {
 		client.trace(`Game handler for [${client.path}]`);
