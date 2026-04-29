@@ -11,7 +11,7 @@ import * as libFs from "fs/promises";
 
 const logger = libLog.Logger('crossword');
 
-const NAME_REGEX = '^[a-zA-Z0-9]([-_.]?[a-zA-Z0-9])*$';
+const NAME_REGEX = /^[a-zA-Z0-9]([-_.]?[a-zA-Z0-9])*$/;
 const NAME_MAX_LENGTH = 256;
 const GRID_DIMENSIONS = { min: 1, max: 64 };
 const MAX_FILE_SIZE = 100_000;
