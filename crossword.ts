@@ -556,7 +556,7 @@ export class Crossword implements libInterface.ModuleInterface {
 		const fullPath = this.fileStatic(path);
 
 		/* look for the file (will never be an immutable path; consider it stable) */
-		const cached: libCache.Cached | null = libCache.GetNormal(fullPath, true);
+		const cached: libCache.Cached | null = libCache.GetCached(fullPath, true);
 		if (cached == null) {
 			client.error(`Failed to find content [${fullPath}]`);
 			client.respondFileSystemError();
@@ -583,11 +583,12 @@ export class Crossword implements libInterface.ModuleInterface {
 			return;
 
 		/* add the required page headers and load the content from cache */
-		const page = new libBuilder.HtmlPage('en', '', b.Embed(body));
-		page.head += b.Meta('viewport', 'width=device-width, initial-scale=1');
-		page.head += b.Title('Crosswords!');
-		page.head += b.LoadStyle(toPath('/style.css'));
-		page.head += b.LoadScript(toPath('/notifier.js'));
+		const page = new libBuilder.HtmlPage('en', [
+			b.Meta('viewport', 'width=device-width, initial-scale=1'),
+			b.Title('Crosswords!'),
+			b.LoadStyle(toPath('/style.css')),
+			b.LoadScript(toPath('/notifier.js'))
+		], b.Embed(body, true));
 		client.respondHtml(page, { status: libRequest.Status.Ok });
 	}
 	private async buildPlayPage(client: libClient.HttpRequest): Promise<void> {
@@ -601,13 +602,14 @@ export class Crossword implements libInterface.ModuleInterface {
 
 		/* add the required page headers and load the content from cache (prevent
 		*	user-zooming as this breaks viewport handling for keyboard-detection) */
-		const page = new libBuilder.HtmlPage('en', '', b.Embed(body));
-		page.head += b.Meta('viewport', 'width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no');
-		page.head += b.Title('Play Crossword!');
-		page.head += b.LoadStyle(toPath('/style.css'));
-		page.head += b.LoadScript(toPath('/notifier.js'));
-		page.head += b.LoadScript(toPath('/sync-socket.js'));
-		page.head += b.LoadScript(toPath('/grid.js'));
+		const page = new libBuilder.HtmlPage('en', [
+			b.Meta('viewport', 'width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no'),
+			b.Title('Play Crossword!'),
+			b.LoadStyle(toPath('/style.css')),
+			b.LoadScript(toPath('/notifier.js')),
+			b.LoadScript(toPath('/sync-socket.js')),
+			b.LoadScript(toPath('/grid.js'))
+		], b.Embed(body, true));
 		client.respondHtml(page, { status: libRequest.Status.Ok });
 	}
 	private async buildEditorPage(client: libClient.HttpRequest): Promise<void> {
@@ -621,11 +623,12 @@ export class Crossword implements libInterface.ModuleInterface {
 
 		/* add the required page headers and load the content from cache (prevent
 		*	user-zooming as this breaks viewport handling for keyboard-detection) */
-		const page = new libBuilder.HtmlPage('en', '', b.Embed(body));
-		page.head += b.Meta('viewport', 'width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no');
-		page.head += b.Title('Crossword Editor');
-		page.head += b.LoadStyle(toPath('/style.css'));
-		page.head += b.LoadScript(toPath('/grid.js'));
+		const page = new libBuilder.HtmlPage('en', [
+			b.Meta('viewport', 'width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no'),
+			b.Title('Crossword Editor'),
+			b.LoadStyle(toPath('/style.css')),
+			b.LoadScript(toPath('/grid.js'))
+		], b.Embed(body, true));
 		client.respondHtml(page, { status: libRequest.Status.Ok });
 	}
 

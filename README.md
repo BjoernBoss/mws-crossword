@@ -57,4 +57,4 @@ Upon each connection established to a known crossword game, the WebSocket client
 - Max upload size: 100 KB
 
 ## Persistence
-Games are stored as JSON files (`{name}.json`) in the data directory. Writebacks are debounced by 60 seconds after the last change. When all clients disconnect, any pending changes are flushed immediately before the game is unloaded. A retention timer keeps the game in memory briefly to handle reconnections. Writebacks use a temporary file (`{name}.json.upload`) and atomic rename to prevent corruption.
+Games are stored as JSON files (`{name}.json`) in the data directory. Writebacks are debounced by 60 seconds after the last change. When all clients disconnect, any pending changes are flushed immediately before the game is unloaded. A retention timer keeps the game in memory briefly to handle reconnections. Writebacks use a temporary file (`{name}.json.temp`) and atomic rename to prevent corruption.
