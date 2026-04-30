@@ -39,6 +39,15 @@
 	<script>
 		let _state = { removing: null, busy: false };
 
+		_state.makeUrl = function (path) {
+			let current = document.location.pathname;
+			if (!current.endsWith('/'))
+				current += '/';
+			if (path.startsWith('/') || path.startsWith('./'))
+				path = path.substring(path.indexOf('/') + 1);
+			return current + path;
+		}
+
 		window.onload = function () {
 			/* check if a notification is to be shown */
 			let name = new URLSearchParams(document.location.search).get('uploaded');
@@ -60,7 +69,7 @@
 			});
 
 			/* start the query of all of the games */
-			fetch(GAMES_RESOURCE)
+			fetch(_state.makeUrl('./games'))
 				.then(function (resp) {
 					if (resp.status != 200)
 						throw new Error(`Server responded with ${resp.status}`);
@@ -153,10 +162,10 @@
 		}
 
 		_state.startEditor = function () {
-			document.location = './editor.html';
+			document.location = _state.makeUrl('./editor.html');
 		}
 		_state.startPlay = function (name) {
-			document.location = `./play.html?game=${name}`;
+			document.location = _state.makeUrl(`./play.html?game=${name}`);
 		}
 	</script>
 </div>
