@@ -588,7 +588,10 @@ export class Crossword implements libInterface.ModuleInterface {
 			b.Title('Crosswords!'),
 			b.LoadStyle(toPath('/style.css')),
 			b.LoadScript(toPath('/notifier.js'))
-		], b.Embed(body, true));
+		], [
+			b.AddScript(`GAMES_RESOURCE="${client.makePath('/games')}"`),
+			b.Embed(body, true)
+		]);
 		client.respondHtml(page, { status: libRequest.Status.Ok });
 	}
 	private async buildPlayPage(client: libClient.HttpRequest): Promise<void> {

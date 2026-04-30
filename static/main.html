@@ -60,7 +60,7 @@
 			});
 
 			/* start the query of all of the games */
-			fetch('./games')
+			fetch(GAMES_RESOURCE)
 				.then(function (resp) {
 					if (resp.status != 200)
 						throw new Error(`Server responded with ${resp.status}`);
