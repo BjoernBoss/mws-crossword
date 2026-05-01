@@ -515,7 +515,7 @@ export class Crossword implements libInterface.ModuleInterface {
 		/* register the client to the game to prevent it from being removed
 		*	(shift the game-name onto the log, but never unshift it again) */
 		game.register(client);
-		client.shiftLog(name);
+		client.pushLog(name);
 		client.log('Registered websocket to game');
 
 		/* wait for the game data to load and check if the file was found */
@@ -556,7 +556,7 @@ export class Crossword implements libInterface.ModuleInterface {
 		const fullPath = this.fileStatic(path);
 
 		/* look for the file (will never be an immutable path; consider it stable) */
-		const cached: libCache.Cached | null = libCache.GetCached(fullPath, true);
+		const cached: libCache.Cached | null = libCache.GetActual(fullPath, true);
 		if (cached == null) {
 			client.error(`Failed to find content [${fullPath}]`);
 			client.respondFileSystemError();
@@ -574,7 +574,7 @@ export class Crossword implements libInterface.ModuleInterface {
 		}
 	}
 	private async buildMainPage(client: libClient.HttpRequest): Promise<void> {
-		const toPath = (path: string) => libCache.Immutable(client.makePath(path));
+		const toPath = (path: string) => libCache.MakeImmutable(client.makePath(path));
 		const b = libBuilder;
 
 		/* read the body */
@@ -592,7 +592,7 @@ export class Crossword implements libInterface.ModuleInterface {
 		client.respondHtml(page, { status: libRequest.Status.Ok });
 	}
 	private async buildPlayPage(client: libClient.HttpRequest): Promise<void> {
-		const toPath = (path: string) => libCache.Immutable(client.makePath(path));
+		const toPath = (path: string) => libCache.MakeImmutable(client.makePath(path));
 		const b = libBuilder;
 
 		/* read the body */
@@ -613,7 +613,7 @@ export class Crossword implements libInterface.ModuleInterface {
 		client.respondHtml(page, { status: libRequest.Status.Ok });
 	}
 	private async buildEditorPage(client: libClient.HttpRequest): Promise<void> {
-		const toPath = (path: string) => libCache.Immutable(client.makePath(path));
+		const toPath = (path: string) => libCache.MakeImmutable(client.makePath(path));
 		const b = libBuilder;
 
 		/* read the body */
