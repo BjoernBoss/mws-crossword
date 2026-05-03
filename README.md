@@ -35,6 +35,7 @@ Then just build and run the server as usual.
 | Method | Path | Description |
 |---|---|---|
 | GET | `/` | Game lobby: list, create, and delete crosswords |
+| GET | `/main`, `/main.html` | Redirect to `/` page |
 | GET | `/editor`, `/play` | Redirect to corresponding `.html` page |
 | GET | `/play.html` | Play/solve a crossword collaboratively |
 | GET | `/editor.html` | Create a new crossword layout |

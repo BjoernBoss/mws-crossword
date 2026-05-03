@@ -141,7 +141,7 @@ class SyncSocket {
 		}
 
 		/* mark the socket as failed */
-		console.error(`Not trying a new connection to [${this._url}]`);
+		console.error(`Not trying to connect again to [${this._url}]`);
 		if (this._wasConnected)
 			this._fatal('Connection to server lost!');
 		else

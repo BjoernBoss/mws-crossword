@@ -183,13 +183,13 @@
 
 			/* post the result out */
 			_state.uploading = true;
-			fetch(`./game/${name}`, { method: 'POST', body: JSON.stringify(out), headers: { "Content-Type": 'application/json' } })
+			fetch(`./game/${name}`, { method: 'PUT', body: JSON.stringify(out), headers: { "Content-Type": 'application/json' } })
 				.then(function (resp) {
 					/* redirect to the main page */
 					if (!resp.ok)
 						throw new Error(resp.statusText);
 					_state.uploaded = true;
-					document.location = `./main.html?uploaded=${name}`;
+					document.location = document.location.pathname.substring(0, document.location.pathname.lastIndexOf('/')) + `?uploaded=${name}`;
 				}).catch(function (e) {
 					/* post the error */
 					document.getElementById("finalize").classList.add('show');

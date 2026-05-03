@@ -24,9 +24,11 @@
 		<div class="content" id="container">
 			<div class="scroll-view">
 				<div style="margin: 30px; min-width: 250px; max-width: 450px; width: calc(100% - 60px);" id="content">
-					<div class="button menu-option" onclick="_state.startEditor();">
-						Create a new Crossword!
-					</div>
+					<a class="button menu-option" id="open-editor">
+						<div class="menu-text">
+							Create a new Crossword!
+						</div>
+					</a>
 				</div>
 			</div>
 		</div>
@@ -41,6 +43,8 @@
 
 		_state.makeUrl = function (path) {
 			let current = document.location.pathname;
+			if (path == '' || path == '.')
+				return current;
 			if (!current.endsWith('/'))
 				current += '/';
 			if (path.startsWith('/') || path.startsWith('./'))
@@ -53,6 +57,9 @@
 			let name = new URLSearchParams(document.location.search).get('uploaded');
 			if (name != null)
 				PushNotification(`Crossword [${name}] uploaded!`, false, null);
+
+			/* update the editor url */
+			document.getElementById('open-editor').href = _state.makeUrl('./editor.html');
 
 			/* patch the history to prevent the banner from being shown again */
 			if (window.history.replaceState) {
@@ -87,8 +94,9 @@
 						sep.style.height = '20px';
 						document.getElementById('content').appendChild(sep);
 
-						let entry = document.createElement('div');
+						let entry = document.createElement('a');
 						entry.classList.add('button', 'menu-option');
+						entry.href = _state.makeUrl(`./play.html?game=${name}`);
 						document.getElementById('content').appendChild(entry);
 
 						let text = document.createElement('div');
@@ -112,12 +120,6 @@
 						//	e.stopPropagation();
 						//	_state.removeEntry(name);
 						//};
-
-						/* add the main handling callback */
-						entry.onclick = function (e) {
-							e.stopPropagation();
-							_state.startPlay(name);
-						};
 					}
 				})
 				.catch(function (e) {
@@ -146,11 +148,11 @@
 			_state.busy = true;
 
 			/* try to remove the entry */
-			fetch(`./game/${_state.removing}`, { method: 'DELETE' })
+			fetch(_state.makeUrl(`./game/${_state.removing}`), { method: 'DELETE' })
 				.then(function (resp) {
 					if (!resp.ok)
 						throw new Error(resp.statusText);
-					document.location = './main.html';
+					document.location = _state.makeUrl('.');
 				}).catch(function (e) {
 					document.getElementById('error').classList.add('show');
 					document.getElementById('error').innerText = `Error while deleting the crossword: ${e.message}\nTry to reload the page...`;
@@ -159,13 +161,6 @@
 		}
 		_state.cancelRemove = function () {
 			document.getElementById('remove').classList.remove('show');
-		}
-
-		_state.startEditor = function () {
-			document.location = _state.makeUrl('./editor.html');
-		}
-		_state.startPlay = function (name) {
-			document.location = _state.makeUrl(`./play.html?game=${name}`);
 		}
 	</script>
 </div>

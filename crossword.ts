@@ -37,6 +37,7 @@ interface GameState extends GameBoard {
 enum GameLoadState {
 	valid,
 	doesNotExist,
+	dropped,
 	corrupted
 }
 
@@ -143,7 +144,7 @@ class ActiveGame {
 		}
 		catch (err: any) {
 			if (err.code === 'ENOENT') {
-				logger.error(`Game [${this.filePath}] does not exist: ${err.message}`);
+				logger.error(`Game [${this.filePath}] does not exist`);
 				return GameLoadState.doesNotExist;
 			}
 			logger.error(`Failed to read the game [${this.filePath}] state: ${err.message}`);
@@ -205,9 +206,12 @@ class ActiveGame {
 		for (const child of this.ws)
 			child[0].send(json);
 	}
-	private unloadGame(): void {
+	private async unloadGame(): Promise<void> {
+		/* check if the game is being dropped, in which case it will be unloaded immediately */
+		const immediately = (await this.loading == GameLoadState.dropped);
+
 		/* check the game should be unloaded */
-		if (this.write.retention) {
+		if (immediately || this.write.retention) {
 			if (this.write.failed)
 				logger.warning(`Game state is lost as write-back to [${this.filePath}] failed`);
 			logger.log(`Unloading game [${this.filePath}]...`);
@@ -249,10 +253,10 @@ class ActiveGame {
 			if (this.ws.size == 0)
 				return this.unloadGame();
 			else if (this.write.failed)
-				this.queueWriteBack(true);
+				return this.queueWriteBack(true);
 		});
 	}
-	private queueWriteBack(dirty: boolean): void {
+	private async queueWriteBack(dirty: boolean): Promise<void> {
 		/* check if the game can just be dropped */
 		if (this.data == null) {
 			if (this.ws.size == 0)
@@ -261,7 +265,7 @@ class ActiveGame {
 		}
 
 		/* check if a writeback is currently being performed and queue another to be performed */
-		if (this.write.active) {
+		if (this.write.active != null) {
 			if (dirty)
 				this.write.dirty = true;
 			return;
@@ -282,7 +286,7 @@ class ActiveGame {
 				this.performWriteBack();
 		}
 		else if (this.ws.size == 0)
-			this.unloadGame();
+			await this.unloadGame();
 	}
 
 	public waitOnGame(): Promise<GameLoadState> {
@@ -361,7 +365,12 @@ class ActiveGame {
 	public notifySingle(ws: libClient.ClientSocket): void {
 		ws.send(JSON.stringify(this.buildOutput()));
 	}
-	public async dropGame(): Promise<void> {
+	public async dropGame(reason: string): Promise<void> {
+		/* ensure the game is properly loaded and drop it */
+		if (await this.loading == GameLoadState.dropped)
+			return;
+		this.loading = Promise.resolve(GameLoadState.dropped);
+
 		/* remove all the data to prevent future write-backs and kill any timers */
 		this.data = null;
 		if (this.write.timer != null)
@@ -369,7 +378,7 @@ class ActiveGame {
 		this.write.timer = null;
 
 		/* disconnect all of the clients */
-		const content: string = JSON.stringify('dropped-game');
+		const content: string = JSON.stringify(reason);
 		for (const child of this.ws) {
 			child[0].send(content);
 			child[0].close();
@@ -397,7 +406,7 @@ export class Crossword implements libInterface.ModuleInterface {
 
 	private async modifyGame(client: libClient.HttpRequest): Promise<void> {
 		/* validate the method */
-		const method = client.ensureMethod(['POST', 'DELETE']);
+		const method = client.checkMethod(['PUT', 'DELETE']);
 		if (method == null)
 			return;
 
@@ -414,7 +423,7 @@ export class Crossword implements libInterface.ModuleInterface {
 		if (method == 'DELETE') {
 			/* disconnect any active players */
 			if (name in this.gameStates)
-				await this.gameStates[name].dropGame();
+				await this.gameStates[name].dropGame('dropped-game');
 
 			/* remove the game file itself */
 			try {
@@ -435,7 +444,7 @@ export class Crossword implements libInterface.ModuleInterface {
 		}
 
 		/* validate the content type */
-		if (client.ensureMediaType([libRequest.Media.Json]) == null)
+		if (client.checkMediaType(libRequest.Media.Json) == null)
 			return;
 
 		/* collect all of the data (failure will automatically be responded to by the receive function) */
@@ -523,7 +532,12 @@ export class Crossword implements libInterface.ModuleInterface {
 		if (loadState != GameLoadState.valid) {
 			/* drop the client again from the game and notify it about the state */
 			game.drop(client);
-			client.send(JSON.stringify(loadState == GameLoadState.doesNotExist ? 'unknown-game' : 'corrupted-game'));
+			if (loadState == GameLoadState.doesNotExist)
+				client.send(JSON.stringify('unknown-game'));
+			else if (loadState == GameLoadState.dropped)
+				client.send(JSON.stringify('dropped-game'));
+			else
+				client.send(JSON.stringify('corrupted-game'));
 			client.close();
 			return;
 		}
@@ -574,7 +588,7 @@ export class Crossword implements libInterface.ModuleInterface {
 		}
 	}
 	private async buildMainPage(client: libClient.HttpRequest): Promise<void> {
-		const toPath = (path: string) => libCache.MakeImmutable(client.makePath(path));
+		const toPath = (path: string) => libCache.MakeImmutable(client.makePath(path), true);
 		const b = libBuilder;
 
 		/* read the body */
@@ -592,7 +606,7 @@ export class Crossword implements libInterface.ModuleInterface {
 		client.respondHtml(page, { status: libRequest.Status.Ok });
 	}
 	private async buildPlayPage(client: libClient.HttpRequest): Promise<void> {
-		const toPath = (path: string) => libCache.MakeImmutable(client.makePath(path));
+		const toPath = (path: string) => libCache.MakeImmutable(client.makePath(path), true);
 		const b = libBuilder;
 
 		/* read the body */
@@ -613,7 +627,7 @@ export class Crossword implements libInterface.ModuleInterface {
 		client.respondHtml(page, { status: libRequest.Status.Ok });
 	}
 	private async buildEditorPage(client: libClient.HttpRequest): Promise<void> {
-		const toPath = (path: string) => libCache.MakeImmutable(client.makePath(path));
+		const toPath = (path: string) => libCache.MakeImmutable(client.makePath(path), true);
 		const b = libBuilder;
 
 		/* read the body */
@@ -640,7 +654,7 @@ export class Crossword implements libInterface.ModuleInterface {
 			return this.modifyGame(client);
 
 		/* all other endpoints only support 'getting' */
-		if (client.ensureMethod(['GET']) == null)
+		if (client.checkMethod('GET') == null)
 			return;
 
 		/* check if its a redirection and forward it accordingly */
@@ -685,5 +699,14 @@ export class Crossword implements libInterface.ModuleInterface {
 		else
 			client.respondNotFound();
 		client.log(`Invalid request for web-socket point for game [${name}]`);
+	}
+	public async stop(): Promise<void> {
+		const list: Promise<void>[] = [];
+
+		/* disconnect all games */
+		const games = Object.values(this.gameStates);
+		for (const game of games)
+			list.push(game.dropGame('shutdown'));
+		await Promise.all(list);
 	}
 }
