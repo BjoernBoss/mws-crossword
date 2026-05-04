@@ -108,8 +108,8 @@ function ParseAndValidateGameBoard(data: string, shallowGrid: boolean): GameBoar
 		throw new Error('Malformed object');
 	const width = obj.width, height = obj.height;
 	if (typeof width != 'number' || typeof height != 'number'
-		|| !isFinite(width) || width < GRID_DIMENSIONS.min || width > GRID_DIMENSIONS.max
-		|| !isFinite(height) || height < GRID_DIMENSIONS.min || height > GRID_DIMENSIONS.max)
+		|| !isFinite(width) || width < GRID_DIMENSIONS.min || width > GRID_DIMENSIONS.max || Math.floor(width) != width
+		|| !isFinite(height) || height < GRID_DIMENSIONS.min || height > GRID_DIMENSIONS.max || Math.floor(height) != height)
 		throw new Error('Malformed Dimensions');
 
 	/* validate and parse the list of cells and return the game structure */
