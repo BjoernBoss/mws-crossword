@@ -9,13 +9,14 @@ import * as libBuilder from "core/builder.js";
 import * as libCache from "core/cache.js";
 import * as libFs from "fs/promises";
 
-const logger = libLog.Logger('crossword');
-
+const MODULE_NAME = 'crossword';
 const NAME_REGEX = /^[a-zA-Z0-9]([-_.]?[a-zA-Z0-9])*$/;
 const NAME_MAX_LENGTH = 256;
 const GRID_DIMENSIONS = { min: 1, max: 64 };
 const MAX_FILE_SIZE = 100_000;
 const WRITE_BACK_DELAY_MS = 60_000;
+
+const logger = libLog.Logger(MODULE_NAME);
 
 interface GridCell {
 	solid: boolean;
@@ -397,7 +398,7 @@ export class Crossword implements libInterface.ModuleInterface {
 	private fileGames: (path: string) => string;
 	private gameStates: Record<string, ActiveGame>;
 
-	public name: string = 'crossword';
+	public name: string = MODULE_NAME;
 	constructor(dataPath: string) {
 		this.fileStatic = libLocation.MakeSelfPath(import.meta.url, '/static');
 		this.fileGames = libLocation.MakeLocation(dataPath);
@@ -597,12 +598,16 @@ export class Crossword implements libInterface.ModuleInterface {
 			return;
 
 		/* add the required page headers and load the content from cache */
-		const page = new libBuilder.HtmlPage('en', [
-			b.Meta('viewport', 'width=device-width, initial-scale=1'),
-			b.Title('Crosswords!'),
-			b.LoadStyle(toPath('/style.css')),
-			b.LoadScript(toPath('/notifier.js'))
-		], b.Embed(body, true));
+		const page = new libBuilder.HtmlPage({
+			language: 'en',
+			head: [
+				b.Meta('viewport', 'width=device-width, initial-scale=1'),
+				b.Title('Crosswords!'),
+				b.LoadStyle(toPath('/style.css')),
+				b.LoadScript(toPath('/notifier.js'))
+			],
+			body: b.Embed(body, true)
+		});
 		client.respondHtml(page, { status: libRequest.Status.Ok });
 	}
 	private async buildPlayPage(client: libClient.HttpRequest): Promise<void> {
@@ -616,14 +621,18 @@ export class Crossword implements libInterface.ModuleInterface {
 
 		/* add the required page headers and load the content from cache (prevent
 		*	user-zooming as this breaks viewport handling for keyboard-detection) */
-		const page = new libBuilder.HtmlPage('en', [
-			b.Meta('viewport', 'width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no'),
-			b.Title('Play Crossword!'),
-			b.LoadStyle(toPath('/style.css')),
-			b.LoadScript(toPath('/notifier.js')),
-			b.LoadScript(toPath('/sync-socket.js')),
-			b.LoadScript(toPath('/grid.js'))
-		], b.Embed(body, true));
+		const page = new libBuilder.HtmlPage({
+			language: 'en',
+			head: [
+				b.Meta('viewport', 'width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no'),
+				b.Title('Play Crossword!'),
+				b.LoadStyle(toPath('/style.css')),
+				b.LoadScript(toPath('/notifier.js')),
+				b.LoadScript(toPath('/sync-socket.js')),
+				b.LoadScript(toPath('/grid.js'))
+			],
+			body: b.Embed(body, true)
+		});
 		client.respondHtml(page, { status: libRequest.Status.Ok });
 	}
 	private async buildEditorPage(client: libClient.HttpRequest): Promise<void> {
@@ -637,12 +646,16 @@ export class Crossword implements libInterface.ModuleInterface {
 
 		/* add the required page headers and load the content from cache (prevent
 		*	user-zooming as this breaks viewport handling for keyboard-detection) */
-		const page = new libBuilder.HtmlPage('en', [
-			b.Meta('viewport', 'width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no'),
-			b.Title('Crossword Editor'),
-			b.LoadStyle(toPath('/style.css')),
-			b.LoadScript(toPath('/grid.js'))
-		], b.Embed(body, true));
+		const page = new libBuilder.HtmlPage({
+			language: 'en',
+			head: [
+				b.Meta('viewport', 'width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no'),
+				b.Title('Crossword Editor'),
+				b.LoadStyle(toPath('/style.css')),
+				b.LoadScript(toPath('/grid.js'))
+			],
+			body: b.Embed(body, true)
+		});
 		client.respondHtml(page, { status: libRequest.Status.Ok });
 	}
 
@@ -657,24 +670,18 @@ export class Crossword implements libInterface.ModuleInterface {
 		if (client.checkMethod('GET') == null)
 			return;
 
-		/* check if its a redirection and forward it accordingly */
-		if (client.path == '/main' || client.path == '/main.html')
-			return client.respondTemporaryRedirect(client.makePath('/'));
-		if (client.path == '/editor')
-			return client.respondTemporaryRedirect(client.makePath('/editor.html'));
-		if (client.path == '/play')
-			return client.respondTemporaryRedirect(client.makePath('/play.html'));
-
 		/* check if the games are queried */
 		if (client.path == '/games')
 			return this.queryGames(client);
 
-		/* check if its one of the html endpoints and build them (discard any other requests) */
+		/* check if its one of the primary endpoints and build them (discard any html requests) */
+		if (client.path == '/main')
+			return client.respondTemporaryRedirect(client.makePath('/'));
 		if (client.path == '/')
 			return this.buildMainPage(client);
-		if (client.path == '/play.html')
+		if (client.path == '/play')
 			return this.buildPlayPage(client);
-		if (client.path == '/editor.html')
+		if (client.path == '/editor')
 			return this.buildEditorPage(client);
 		if (client.path.toLowerCase().endsWith('.html'))
 			return;
@@ -698,7 +705,7 @@ export class Crossword implements libInterface.ModuleInterface {
 		}
 		else
 			client.respondNotFound();
-		client.log(`Invalid request for web-socket point for game [${name}]`);
+		client.error(`Invalid request for web-socket point for game [${name}]`);
 	}
 	public async stop(): Promise<void> {
 		const list: Promise<void>[] = [];

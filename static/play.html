@@ -50,6 +50,8 @@
 
 	<!-- primary app logic -->
 	<script>
+		const COOKIE_NAME_LIFETIME_MS = 24 * 60 * 60 * 1000;
+
 		let _state = {
 			game: '',
 			name: '',
@@ -167,7 +169,7 @@
 
 				/* update the name and write it to the cookie (lifetime = 24hrs) */
 				_state.name = name;
-				document.cookie = `crossword-last-name=${_state.name}; expires=${new Date(Date.now() + 24 * 60 * 60 * 1000).toUTCString()};`;
+				document.cookie = `crossword-last-name=${_state.name}; expires=${new Date(Date.now() + COOKIE_NAME_LIFETIME_MS).toUTCString()};`;
 
 				/* notify the socket about the available name */
 				if (_state.sock.connected())

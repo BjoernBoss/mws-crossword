@@ -35,10 +35,9 @@ Then just build and run the server as usual.
 | Method | Path | Description |
 |---|---|---|
 | GET | `/` | Game lobby: list, create, and delete crosswords |
-| GET | `/main`, `/main.html` | Redirect to `/` page |
-| GET | `/editor`, `/play` | Redirect to corresponding `.html` page |
-| GET | `/play.html` | Play/solve a crossword collaboratively |
-| GET | `/editor.html` | Create a new crossword layout |
+| GET | `/main` | Redirect to `/` page |
+| GET | `/play` | Play/solve a crossword collaboratively |
+| GET | `/editor` | Create a new crossword layout |
 | GET | `/games` | JSON array of available game names |
 | POST | `/game/{name}` | Create a new game (JSON body with `width`, `height`, `grid`) |
 | DELETE | `/game/{name}` | Delete an existing game |

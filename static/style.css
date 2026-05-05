@@ -138,7 +138,7 @@
 }
 
 .content .scroll-view {
-	overflow-y: auto;
+	overflow: hidden auto;
 	flex: 1;
 	display: flex;
 	flex-direction: column;

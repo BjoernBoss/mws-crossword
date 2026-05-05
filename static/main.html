@@ -59,7 +59,7 @@
 				PushNotification(`Crossword [${name}] uploaded!`, false, null);
 
 			/* update the editor url */
-			document.getElementById('open-editor').href = _state.makeUrl('./editor.html');
+			document.getElementById('open-editor').href = _state.makeUrl('./editor');
 
 			/* patch the history to prevent the banner from being shown again */
 			if (window.history.replaceState) {
@@ -96,7 +96,7 @@
 
 						let entry = document.createElement('a');
 						entry.classList.add('button', 'menu-option');
-						entry.href = _state.makeUrl(`./play.html?game=${name}`);
+						entry.href = _state.makeUrl(`./play?game=${name}`);
 						document.getElementById('content').appendChild(entry);
 
 						let text = document.createElement('div');
