@@ -190,7 +190,10 @@
 				if (!resp.ok)
 					throw new Error(resp.statusText);
 				_state.uploaded = true;
-				document.location = document.location.pathname.substring(0, document.location.pathname.lastIndexOf('/')) + `?uploaded=${name}`;
+				let path = document.location.pathname.substring(0, document.location.pathname.lastIndexOf('/'));
+				if (path == '')
+					path = '/';
+				document.location = `${path}?uploaded=${name}`;
 			}).catch(function (e) {
 				/* post the error */
 				document.getElementById("finalize").classList.add('show');
