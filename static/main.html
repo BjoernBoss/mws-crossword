@@ -36,131 +36,131 @@
 		<!-- main footer -->
 		<div class="footer">Crosswords can be created and edited together. Deleted crosswords cannot be recovered.</div>
 	</div>
-
-	<!-- primary app logic -->
-	<script>
-		let _state = { removing: null, busy: false };
-
-		_state.makeUrl = function (path) {
-			let current = document.location.pathname;
-			if (path == '' || path == '.')
-				return current;
-			if (!current.endsWith('/'))
-				current += '/';
-			if (path.startsWith('/') || path.startsWith('./'))
-				path = path.substring(path.indexOf('/') + 1);
-			return current + path;
-		}
-
-		window.onload = function () {
-			/* check if a notification is to be shown */
-			let name = new URLSearchParams(document.location.search).get('uploaded');
-			if (name != null)
-				PushNotification(`Crossword [${name}] uploaded!`, false, null);
-
-			/* update the editor url */
-			document.getElementById('open-editor').href = _state.makeUrl('./editor');
-
-			/* patch the history to prevent the banner from being shown again */
-			if (window.history.replaceState) {
-				let url = `${document.location.protocol}//${window.location.host}${window.location.pathname}`;
-				if (window.location.pathname.endsWith('/') && window.location.pathname != '/')
-					url = url.slice(0, url.length - 1);
-				window.history.replaceState({}, document.title, url);
-			}
-
-			/* register handle to cancel dialogs */
-			window.addEventListener('keydown', function (e) {
-				if (e.key === 'Escape')
-					_state.cancelRemove();
-			});
-
-			/* start the query of all of the games */
-			fetch(_state.makeUrl('./games'))
-				.then(function (resp) {
-					if (resp.status != 200)
-						throw new Error(`Server responded with ${resp.status}`);
-					if (resp.headers.has('content-type') && !resp.headers.get('content-type').startsWith('application/json'))
-						throw new Error(`Server did not respond with json`);
-					return resp.json();
-				})
-				.then(function (json) {
-					json.sort();
-
-					/* write the values out */
-					for (const name of json) {
-						/* add the next entry */
-						let sep = document.createElement('div');
-						sep.style.height = '20px';
-						document.getElementById('content').appendChild(sep);
-
-						let entry = document.createElement('a');
-						entry.classList.add('button', 'menu-option');
-						entry.href = _state.makeUrl(`./play?game=${name}`);
-						document.getElementById('content').appendChild(entry);
-
-						let text = document.createElement('div');
-						text.classList.add('menu-text');
-						entry.appendChild(text);
-
-						//let hsep = document.createElement('div');
-						//hsep.classList.add('splitter');
-						//entry.appendChild(hsep);
-
-						//let button = document.createElement('div');
-						//button.classList.add('button');
-						//button.innerText = '\u2716';
-						//entry.appendChild(button);
-
-						/* add the inner html */
-						text.innerText = name;
-
-						/* add the delete callback */
-						//button.onclick = function (e) {
-						//	e.stopPropagation();
-						//	_state.removeEntry(name);
-						//};
-					}
-				})
-				.catch(function (e) {
-					PushNotification(`Failed to fetch the list of games: ${e.message}!`, true, () => window.location.reload());
-				});
-		}
-
-		_state.removeEntry = function (name) {
-			/* show the remove-screen */
-			document.getElementById('remove').classList.add('show');
-			document.getElementById('error').classList.remove('show');
-
-			/* update the static content */
-			document.getElementById('remove-caption').innerText = `Removing Crossword`;
-			document.getElementById('remove-disclaimer').innerText = `Are you sure you want to remove: [${name}]\nThe game will be removed permanently.`;
-			_state.removing = name;
-		}
-		_state.doRemove = function () {
-			if (_state.removing == null) return;
-
-			if (_state.busy) {
-				document.getElementById('error').classList.add('show');
-				document.getElementById('error').innerText = `Page is busy...`;
-				return;
-			}
-			_state.busy = true;
-
-			/* try to remove the entry */
-			fetch(_state.makeUrl(`./game/${_state.removing}`), { method: 'DELETE' })
-				.then(function (resp) {
-					if (!resp.ok)
-						throw new Error(resp.statusText);
-					document.location = _state.makeUrl('.');
-				}).catch(function (e) {
-					document.getElementById('error').classList.add('show');
-					document.getElementById('error').innerText = `Error while deleting the crossword: ${e.message}\nTry to reload the page...`;
-					_state.busy = false;
-				});
-		}
-		_state.cancelRemove = function () {
-			document.getElementById('remove').classList.remove('show');
-		}
-	</script>
 </div>
+
+<!-- primary app logic -->
+<script>
+	let _state = { removing: null, busy: false };
+
+	_state.makeUrl = function (path) {
+		let current = document.location.pathname;
+		if (path == '' || path == '.')
+			return current;
+		if (!current.endsWith('/'))
+			current += '/';
+		if (path.startsWith('/') || path.startsWith('./'))
+			path = path.substring(path.indexOf('/') + 1);
+		return current + path;
+	}
+
+	window.onload = function () {
+		/* check if a notification is to be shown */
+		let name = new URLSearchParams(document.location.search).get('uploaded');
+		if (name != null)
+			PushNotification(`Crossword [${name}] uploaded!`, false, null);
+
+		/* update the editor url */
+		document.getElementById('open-editor').href = _state.makeUrl('./editor');
+
+		/* patch the history to prevent the banner from being shown again */
+		if (window.history.replaceState) {
+			let url = `${document.location.protocol}//${window.location.host}${window.location.pathname}`;
+			if (window.location.pathname.endsWith('/') && window.location.pathname != '/')
+				url = url.slice(0, url.length - 1);
+			window.history.replaceState({}, document.title, url);
+		}
+
+		/* register handle to cancel dialogs */
+		window.addEventListener('keydown', function (e) {
+			if (e.key === 'Escape')
+				_state.cancelRemove();
+		});
+
+		/* start the query of all of the games */
+		fetch(_state.makeUrl('./games'))
+			.then(function (resp) {
+				if (resp.status != 200)
+					throw new Error(`Server responded with ${resp.status}`);
+				if (resp.headers.has('content-type') && !resp.headers.get('content-type').startsWith('application/json'))
+					throw new Error(`Server did not respond with json`);
+				return resp.json();
+			})
+			.then(function (json) {
+				json.sort();
+
+				/* write the values out */
+				for (const name of json) {
+					/* add the next entry */
+					let sep = document.createElement('div');
+					sep.style.height = '20px';
+					document.getElementById('content').appendChild(sep);
+
+					let entry = document.createElement('a');
+					entry.classList.add('button', 'menu-option');
+					entry.href = _state.makeUrl(`./play?game=${name}`);
+					document.getElementById('content').appendChild(entry);
+
+					let text = document.createElement('div');
+					text.classList.add('menu-text');
+					entry.appendChild(text);
+
+					//let hsep = document.createElement('div');
+					//hsep.classList.add('splitter');
+					//entry.appendChild(hsep);
+
+					//let button = document.createElement('div');
+					//button.classList.add('button');
+					//button.innerText = '\u2716';
+					//entry.appendChild(button);
+
+					/* add the inner html */
+					text.innerText = name;
+
+					/* add the delete callback */
+					//button.onclick = function (e) {
+					//	e.stopPropagation();
+					//	_state.removeEntry(name);
+					//};
+				}
+			})
+			.catch(function (e) {
+				PushNotification(`Failed to fetch the list of games: ${e.message}!`, true, () => window.location.reload());
+			});
+	}
+
+	_state.removeEntry = function (name) {
+		/* show the remove-screen */
+		document.getElementById('remove').classList.add('show');
+		document.getElementById('error').classList.remove('show');
+
+		/* update the static content */
+		document.getElementById('remove-caption').innerText = `Removing Crossword`;
+		document.getElementById('remove-disclaimer').innerText = `Are you sure you want to remove: [${name}]\nThe game will be removed permanently.`;
+		_state.removing = name;
+	}
+	_state.doRemove = function () {
+		if (_state.removing == null) return;
+
+		if (_state.busy) {
+			document.getElementById('error').classList.add('show');
+			document.getElementById('error').innerText = `Page is busy...`;
+			return;
+		}
+		_state.busy = true;
+
+		/* try to remove the entry */
+		fetch(_state.makeUrl(`./game/${_state.removing}`), { method: 'DELETE' })
+			.then(function (resp) {
+				if (!resp.ok)
+					throw new Error(resp.statusText);
+				document.location = _state.makeUrl('.');
+			}).catch(function (e) {
+				document.getElementById('error').classList.add('show');
+				document.getElementById('error').innerText = `Error while deleting the crossword: ${e.message}\nTry to reload the page...`;
+				_state.busy = false;
+			});
+	}
+	_state.cancelRemove = function () {
+		document.getElementById('remove').classList.remove('show');
+	}
+</script>
