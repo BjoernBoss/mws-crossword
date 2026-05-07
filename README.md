@@ -41,7 +41,7 @@ Then just build and run the server as usual.
 | GET | `/games` | JSON array of available game names |
 | POST | `/game/{name}` | Create a new game (JSON body with `width`, `height`, `grid`) |
 | DELETE | `/game/{name}` | Delete an existing game |
-| GET | `/*.css`, `/*.js` | Static assets |
+| GET | `/*.{css\|js}` | Static assets |
 | WebSocket | `/ws/{name}` | Join a game session |
 
 ## Cookies

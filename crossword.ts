@@ -230,7 +230,7 @@ class ActiveGame {
 	private performWriteBack(): void {
 		/* cache the current state to be serialized and mark the write-back as being processed */
 		const currentState: string = JSON.stringify(this.data);
-		this.write.active = new Promise(async (resolve) => {
+		this.write.active = (async () => {
 			/* try to write the data back via a temporary file */
 			if (await libLocation.AtomicWrite(this.filePath, currentState, 'crossword', logger))
 				this.write.failed = false;
@@ -240,22 +240,19 @@ class ActiveGame {
 			}
 
 			/* mark the write-back as not active anymore */
-			resolve();
 			this.write.active = null;
 
-			/* check if another write-back is queued and start it up again */
+			/* check if another write-back is queued and start it up again or check if the
+			*	game can be unloaded or has failed, and should be written back again */
 			if (this.write.dirty) {
 				this.write.dirty = false;
-				return this.queueWriteBack(true);
+				this.queueWriteBack(true);
 			}
-
-			/* check if this was a write-back without any connected clients, in which case the game can
-			*	be unloaded, and otherwise queue another write-back, if the current one has failed */
-			if (this.ws.size == 0)
-				return this.unloadGame();
+			else if (this.ws.size == 0)
+				this.unloadGame();
 			else if (this.write.failed)
-				return this.queueWriteBack(true);
-		});
+				this.queueWriteBack(true);
+		})();
 	}
 	private queueWriteBack(dirty: boolean): void {
 		/* check if the game can just be dropped */
@@ -340,7 +337,7 @@ class ActiveGame {
 	}
 	public drop(ws: libClient.ClientSocket): void {
 		/* remove the web-socket from the open connections */
-		let name = this.ws.get(ws)!;
+		const name = this.ws.get(ws) ?? '';
 		this.ws.delete(ws);
 		if (this.dropped)
 			return;
@@ -350,7 +347,7 @@ class ActiveGame {
 			this.queueWriteBack(false);
 
 		/* check if other listeners should be notified */
-		else if (name.length > 0)
+		else if (name != '')
 			this.notifyAll();
 	}
 	public register(ws: libClient.ClientSocket): void {
@@ -424,7 +421,7 @@ export class Crossword extends libHandler.ModuleHandler {
 			return;
 
 		/* extract the name (respond with 400/404 on error, as this is a totally owned endpoint) */
-		let name = client.path.slice(6);
+		let name = decodeURIComponent(client.path.slice(6));
 		if (!name.match(GAME_NAME_REGEX) || name.length > GAME_NAME_MAX_LENGTH) {
 			if (method == 'DELETE')
 				client.respondNotFound();
@@ -445,16 +442,17 @@ export class Crossword extends libHandler.ModuleHandler {
 			try {
 				await libFs.unlink(filePath);
 				logger.log(`Game file [${filePath}] deleted successfully`);
-				client.respondOk('delete');
+				client.respondOk({ message: `Game [${name}] deleted successfully` });
 			}
 
 			/* check if the removal failed and log it accordingly */
 			catch (err: any) {
+				if (err.code === 'ENOENT') {
+					logger.error(`Game file [${filePath}] does not exist`);
+					return client.respondNotFound();
+				}
 				logger.error(`Error while removing file [${filePath}]: ${err.message}`);
-				if (err.code === 'ENOENT')
-					client.respondNotFound();
-				else
-					client.respondFileSystemError();
+				client.respondFileSystemError();
 			}
 			return;
 		}
@@ -486,14 +484,14 @@ export class Crossword extends libHandler.ModuleHandler {
 		/* serialize the data to the file and write it out */
 		try {
 			await libFs.writeFile(filePath, JSON.stringify(parsed), { encoding: 'utf-8', flag: 'wx' });
-			client.respondOk('upload');
+			client.respondCreated(client.makePath(`/play?name=${encodeURIComponent(name)}`));
 		}
 
 		/* check why the creating failed and log it accordingly */
 		catch (err: any) {
 			logger.error(`Error while writing the game [${filePath}] out: ${err.message}`);
 			if (err.code === 'EEXIST')
-				client.respondConflict('already exists');
+				client.respondConflict('Already exists');
 			else
 				client.respondFileSystemError();
 		}
@@ -543,6 +541,35 @@ export class Crossword extends libHandler.ModuleHandler {
 		client.tagLog(name);
 		client.log('Registered websocket to game');
 
+		/* register the callbacks (only forward update commands after the game was successfully loaded) */
+		let gameLoaded = false;
+		client.onclose = () => {
+			game.drop(client);
+			client.log(`Socket disconnected`);
+		};
+		client.ondata = (data) => {
+			try {
+				const parsed: any = JSON.parse(data.toString('utf-8'));
+
+				/* dispatch the client request accordingly */
+				if (parsed.cmd == 'name' && typeof parsed.name == 'string') {
+					client.trace(`Received for socket: ${parsed.cmd} (${parsed.name})`);
+					game.updateName(client, parsed.name);
+				}
+				else if (parsed.cmd != 'update')
+					client.warning(`Received unknown command [${parsed.cmd}]`);
+				else if (gameLoaded) {
+					client.trace(`Received grid update`);
+					game.updateGrid(client, parsed.data);
+				}
+				else
+					client.warning('Discarding update of not yet loaded game');
+			} catch (err: any) {
+				client.error(`Failed to parse web-socket response: ${err.message}`);
+				client.close();
+			}
+		};
+
 		/* wait for the game data to load and check if the file was found */
 		const loadState: GameLoadState = await game.waitOnGame();
 		if (loadState != GameLoadState.valid) {
@@ -558,33 +585,8 @@ export class Crossword extends libHandler.ModuleHandler {
 			return;
 		}
 
-		/* register the web-socket callbacks */
-		client.onclose = async () => {
-			game.drop(client);
-			client.log(`Socket disconnected`);
-		};
-		client.ondata = (data) => {
-			try {
-				const parsed: any = JSON.parse(data.toString('utf-8'));
-
-				/* dispatch the client request accordingly */
-				if (parsed.cmd == 'name' && typeof parsed.name == 'string') {
-					client.trace(`Received for socket: ${parsed.cmd} (${parsed.name})`);
-					game.updateName(client, parsed.name);
-				}
-				else if (parsed.cmd == 'update') {
-					client.trace(`Received grid update`);
-					game.updateGrid(client, parsed.data);
-				}
-				else
-					client.warning(`Received unknown command [${parsed.cmd}]`);
-			} catch (err: any) {
-				client.error(`Failed to parse web-socket response: ${err.message}`);
-				client.close();
-			}
-		};
-
 		/* send the initial state to the socket */
+		gameLoaded = true;
 		game.notifySingle(client);
 	}
 	private async fetchBody(client: libClient.HttpRequest, path: string): Promise<string | null> {
@@ -694,7 +696,7 @@ export class Crossword extends libHandler.ModuleHandler {
 		if (client.path == '/games')
 			return this.queryGames(client);
 
-		/* check if its one of the primary endpoints and build them (discard any html requests) */
+		/* check if its one of the primary endpoints and build them dynamically */
 		if (client.path == '/main')
 			return client.respondTemporaryRedirect(client.makePath('/'));
 		if (client.path == '/')
@@ -703,11 +705,10 @@ export class Crossword extends libHandler.ModuleHandler {
 			return this.buildPlayPage(client);
 		if (client.path == '/editor')
 			return this.buildEditorPage(client);
-		if (client.path.toLowerCase().endsWith('.html'))
-			return;
 
-		/* respond to the request by trying to serve the file (all files are considered stable) */
-		await client.tryRespondFile(this.fileStatic(client.path), true);
+		/* respond to the request by trying to serve the file (discard html requests; all files are considered stable) */
+		if (!client.path.toLowerCase().endsWith('.html'))
+			await client.tryRespondFile(this.fileStatic(client.path), true);
 	}
 	protected override async handleUpgrade(client: libClient.HttpUpgrade): Promise<void> {
 		client.trace(`WebSocket for [${client.path}]`);
@@ -717,7 +718,7 @@ export class Crossword extends libHandler.ModuleHandler {
 			return;
 
 		/* extract the name and validate it (return with not-found as the entire endpoint is owned) */
-		let name = client.path.slice(4);
+		let name = decodeURIComponent(client.path.slice(4));
 		if (!name.match(GAME_NAME_REGEX) || name.length > GAME_NAME_MAX_LENGTH)
 			return client.respondNotFound();
 
