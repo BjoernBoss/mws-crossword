@@ -44,12 +44,16 @@ Then just build and run the server as usual.
 | GET | `/*.css`, `/*.js` | Static assets |
 | WebSocket | `/ws/{name}` | Join a game session |
 
+## Cookies
+
+The client code sets the cookie `crossword-last-name` to the last used player name, to retrieve and reuse it on the next refresh.
+
 ## WebSocket Protocol
 Upon each connection established to a known crossword game, the WebSocket clients can give themselves a name, and then push game updates. The game will notify all connected clients upon game changes. Should the game not exist, be corrupted, or be removed, the server will respond with short descriptive error identifiers, and then discard any further game state update requests.
 
 ## Game Rules
  - Grid dimensions: 1x1 to 64x64
- - Game names: alphanumeric with hyphens, dots, and underscores (max 256 characters)
+ - Game names: alphanumeric with hyphens, dots, spaces, and underscores (max 64 characters)
  - Characters: uppercase A-Z only (lowercase input is uppercased; non-letter input is rejected)
  - Solid cells cannot be modified
  - Unnamed players cannot update the grid

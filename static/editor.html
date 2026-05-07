@@ -59,6 +59,9 @@
 
 <!-- primary app logic -->
 <script>
+	const GAME_NAME_REGEX = /^[a-zA-Z0-9]([-_. ]?[a-zA-Z0-9])*$/;
+	const GAME_NAME_MAX_LENGTH = 64;
+
 	let _state = { dirty: false, uploading: false, uploaded: false };
 
 	window.onbeforeunload = function () { if (!_state.dirty || _state.uploaded) return null; return "Your work will be lost."; };
@@ -155,25 +158,9 @@
 			return;
 		}
 
-		/* validate the name length */
-		if (name.length == 0 || name.length > 255) {
-			document.getElementById('error').innerText = 'Name must be between 1 and 255 characters long';
-			document.getElementById('error').classList.add('show');
-			return;
-		}
-
-		/* validate the name style */
-		for (let i = 0; i < name.length; ++i) {
-			if (name[i] >= 'a' && name[i] <= 'z') continue;
-			if (name[i] >= 'A' && name[i] <= 'Z') continue;
-			if (name[i] >= '0' && name[i] <= '9') continue;
-			if (name[i] == '-' || name[i] == '_' || name[i] == '.') {
-				if (i != 0 && i != name.length - 1)
-					continue;
-				document.getElementById('error').innerText = 'Name connot start or end with [._-]';
-			}
-			else
-				document.getElementById('error').innerText = 'Name can only consist of [a-z][A-Z][0-9][._-]';
+		/* validate the name */
+		if (!name.match(GAME_NAME_REGEX) || name.length > GAME_NAME_MAX_LENGTH) {
+			document.getElementById('error').innerText = `Name must start/end with alphanumerical characters and may\nonly contain [._- ] (between 1...${GAME_NAME_MAX_LENGTH})`;
 			document.getElementById('error').classList.add('show');
 			return;
 		}
@@ -184,7 +171,7 @@
 
 		/* post the result out */
 		_state.uploading = true;
-		fetch(`./game/${name}`, { method: 'PUT', body: JSON.stringify(out), headers: { "Content-Type": 'application/json' } })
+		fetch(`./game/${name}`, { method: 'POST', body: JSON.stringify(out), headers: { "Content-Type": 'application/json' } })
 			.then(function (resp) {
 				/* redirect to the main page */
 				if (!resp.ok)
