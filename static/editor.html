@@ -1,16 +1,14 @@
 <!-- SPDX-License-Identifier: BSD-3-Clause -->
 <!-- Copyright (c) 2026 Bjoern Boss Henrichsen -->
-<div contenteditable="false" class="main-body">
+<div contenteditable="false" class="main-body" id="main-body">
 	<!-- dimension screen -->
 	<div id="dimensions" class="overlay show">
 		<div class="dialog">
 			<div class="caption">Dimensions</div>
 			<div style="display: flex; flex-direction: row; margin: 15px;">
-				<input type="number" placeholder="Width" id="width"
-					style="width: 150px; font-size: 1.3em; padding: 4px;" min="1" max="64" value="15">
+				<input type="number" placeholder="Width" id="width" style="width: 150px; font-size: 1.3em; padding: 4px;" min="1" max="64" value="15">
 				<div style="font-size: 1.75em; padding: 0px 10px 5px 10px;">&times;</div>
-				<input type="number" placeholder="Height" id="height"
-					style="width: 150px; font-size: 1.3em; padding: 4px;" min="1" max="64" value="15">
+				<input type="number" placeholder="Height" id="height" style="width: 150px; font-size: 1.3em; padding: 4px;" min="1" max="64" value="15">
 			</div>
 			<div class="confirm">
 				<div class="button" style="width: 150px;" onclick="_state.setup()">Create</div>
@@ -71,7 +69,8 @@
 		if (window.visualViewport) {
 			window.visualViewport.addEventListener("resize", function () {
 				document.body.style.height = `${window.visualViewport.height}px`;
-				document.querySelectorAll('.overlay').forEach(e => e.style.height = `${window.visualViewport.height}px`);
+				const height = `${document.getElementById('main-body').clientHeight}px`;
+				document.querySelectorAll('.overlay').forEach(e => e.style.height = height);
 			});
 		}
 	}

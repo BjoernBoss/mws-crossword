@@ -11,6 +11,8 @@
 			<div id="error" class="error" style="margin: 0px 15px 15px 15px;">Error Message</div>
 			<div class="confirm">
 				<div class="button" style="width: 100px;" onclick="_state.enter(false)">Ok</div>
+				<div style="width: 15px;"></div>
+				<div class="button" style="width: 100px;" onclick="_state.enter(true)">Watch</div>
 			</div>
 		</div>
 	</div>
@@ -35,8 +37,8 @@
 
 		<!-- game footer -->
 		<div class="footer">
-			<div class="button" style="height: 50px; width: 150px; margin-right: 15px;" id="guess">Guess</div>
-			<div style="display: flex; flex-direction: row;">
+			<div class="button hidden" style="height: 50px; width: 150px; margin-right: 15px;" id="guess">Guess</div>
+			<div style="display: flex; flex-direction: row; margin-left: auto;">
 				<div class="button left" style="height: 50px; width: 150px;" id="horizontal">
 					Horizontal &#x27a1;&#xFE0F;
 				</div>
@@ -64,10 +66,14 @@
 		view: null,
 		focus: null,
 		configured: false,
-		failedNotified: false
+		failedNotified: false,
+		manifest: { edit: false, cookie: '' }
 	};
 
 	window.onload = function () {
+		_state.manifest.edit = __LOAD_CONFIG__.manifest?.edit ?? false;
+		_state.manifest.cookie = __LOAD_CONFIG__.manifest?.cookie ?? '';
+
 		/* ensure phones handle the visibility of the keyboard properly */
 		if (window.visualViewport) {
 			let lastHeight = window.visualViewport.height;
@@ -86,9 +92,11 @@
 		}
 
 		/* initialize the last name from the cookies */
-		let lastName = document.cookie.split('; ').find((v) => v.startsWith('crossword-last-name='))?.split('=')[1];
-		if (lastName != null)
-			document.getElementById('name').value = lastName;
+		if (_state.manifest.cookie != '') {
+			let lastName = document.cookie.split('; ').find((v) => v.startsWith(`${_state.manifest.cookie}=`))?.split('=')[1];
+			if (lastName != null)
+				document.getElementById('name').value = lastName;
+		}
 
 		/* initialize the caption */
 		let game = new URLSearchParams(document.location.search).get('game');
@@ -143,14 +151,9 @@
 		if (!_state.focus.isCertain())
 			document.getElementById('guess').classList.add('toggled');
 
-		/* add a callback to be able to hide the name-input (thereby only viewing the game) */
-		document.getElementById('name-dialog').onmousedown = function (e) {
-			e.stopPropagation();
-		};
-		document.getElementById('fetch-name').onmousedown = function (e) {
-			e.preventDefault();
+		/* check if the player is not allowed to edit the game */
+		if (!_state.manifest.edit)
 			_state.enter(true);
-		};
 	}
 
 	_state.enter = function (passive) {
@@ -169,7 +172,8 @@
 
 			/* update the name and write it to the cookie (lifetime = 24hrs) */
 			_state.name = name;
-			document.cookie = `crossword-last-name=${_state.name}; expires=${new Date(Date.now() + COOKIE_NAME_LIFETIME_MS).toUTCString()};`;
+			if (_state.manifest.cookie != '')
+				document.cookie = `${_state.manifest.cookie}=${_state.name}; expires=${new Date(Date.now() + COOKIE_NAME_LIFETIME_MS).toUTCString()};`;
 
 			/* notify the socket about the available name */
 			if (_state.sock.connected())
@@ -180,6 +184,10 @@
 		}
 		_state.configured = true;
 		document.getElementById('fetch-name').classList.remove('show');
+
+		/* check if the guess button can be added */
+		if (!passive)
+			document.getElementById('guess').classList.remove('hidden');
 
 		/* register convenience handler (first after setting the name to prevent the input from being consumed) */
 		document.body.onkeydown = function (e) {

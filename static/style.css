@@ -94,7 +94,6 @@
 	align-items: center;
 	width: 100%;
 	padding: 20px;
-	justify-content: space-between;
 	box-sizing: border-box;
 	border-style: solid;
 	border-color: #202020;
@@ -232,6 +231,11 @@
 	box-shadow: 0 0 3px #000000;
 	cursor: default;
 	text-decoration: none;
+	color: black;
+}
+
+.button.hidden {
+	display: none;
 }
 
 .button.left {

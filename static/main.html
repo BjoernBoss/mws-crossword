@@ -23,12 +23,7 @@
 		<!-- selection view -->
 		<div class="content" id="container">
 			<div class="scroll-view">
-				<div style="margin: 30px; min-width: 250px; max-width: 450px; width: calc(100% - 60px);" id="content">
-					<a class="button menu-option" id="open-editor">
-						<div class="menu-text">
-							Create a new Crossword!
-						</div>
-					</a>
+				<div style="margin: 30px; min-width: 250px; max-width: 450px; width: calc(100% - 60px); display: flex; flex-direction: column; gap: 20px;" id="content">
 				</div>
 			</div>
 		</div>
@@ -40,7 +35,7 @@
 
 <!-- primary app logic -->
 <script>
-	let _state = { removing: null, busy: false };
+	let _state = { removing: null, busy: false, manifest: { create: false, delete: false } };
 
 	_state.makeUrl = function (path) {
 		let current = document.location.pathname;
@@ -54,13 +49,26 @@
 	}
 
 	window.onload = function () {
+		_state.manifest.create = __LOAD_CONFIG__.manifest?.create ?? false;
+		_state.manifest.delete = __LOAD_CONFIG__.manifest?.delete ?? false;
+
+		/* check if creating of crosswords is allowed */
+		if (_state.manifest.create) {
+			let entry = document.createElement('a');
+			entry.classList.add('button', 'menu-option');
+			entry.href = _state.makeUrl('./editor');
+			document.getElementById('content').appendChild(entry);
+
+			let text = document.createElement('div');
+			text.classList.add('menu-text');
+			text.innerText = 'Create a new Crossword!';
+			entry.appendChild(text);
+		}
+
 		/* check if a notification is to be shown */
 		let name = new URLSearchParams(document.location.search).get('uploaded');
 		if (name != null)
 			PushNotification(`Crossword [${name}] uploaded!`, false, null);
-
-		/* update the editor url */
-		document.getElementById('open-editor').href = _state.makeUrl('./editor');
 
 		/* patch the history to prevent the banner from being shown again */
 		if (window.history.replaceState) {
@@ -91,10 +99,6 @@
 				/* write the values out */
 				for (const name of json) {
 					/* add the next entry */
-					let sep = document.createElement('div');
-					sep.style.height = '20px';
-					document.getElementById('content').appendChild(sep);
-
 					let entry = document.createElement('a');
 					entry.classList.add('button', 'menu-option');
 					entry.href = _state.makeUrl(`./play?game=${name}`);
@@ -104,23 +108,25 @@
 					text.classList.add('menu-text');
 					entry.appendChild(text);
 
-					//let hsep = document.createElement('div');
-					//hsep.classList.add('splitter');
-					//entry.appendChild(hsep);
-
-					//let button = document.createElement('div');
-					//button.classList.add('button');
-					//button.innerText = '\u2716';
-					//entry.appendChild(button);
-
 					/* add the inner html */
 					text.innerText = name;
 
-					/* add the delete callback */
-					//button.onclick = function (e) {
-					//	e.stopPropagation();
-					//	_state.removeEntry(name);
-					//};
+					/* check if the crosswords can be deleted */
+					if (!_state.manifest.delete)
+						continue;
+					let hsep = document.createElement('div');
+					hsep.classList.add('splitter');
+					entry.appendChild(hsep);
+
+					let button = document.createElement('div');
+					button.classList.add('button');
+					button.innerText = '\u2716';
+					button.onclick = function (e) {
+						e.stopPropagation();
+						e.preventDefault();
+						_state.removeEntry(name);
+					};
+					entry.appendChild(button);
 				}
 			})
 			.catch(function (e) {

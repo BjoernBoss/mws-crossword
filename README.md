@@ -14,12 +14,12 @@ Clone into the modules directory of an existing MWS-Base installation:
 Register the module in `modules/setup.js`:
 
 ```JavaScript
-import * as libInterface from "core/interface.js";
+import * as libHandler from "core/handler.js";
 
 export async function Run(server) {
     try {
         const crossword = await import("crossword/crossword.js");
-        const dispatch = new libInterface.DispatchModule({
+        const dispatch = new libHandler.DispatchModule({
             '/crossword': new crossword.Crossword('./local_data/crossword'),
         });
         server.listenHttp(8080, dispatch, (host) => host == 'localhost');
@@ -58,7 +58,7 @@ Upon each connection established to a known crossword game, the WebSocket client
  - Solid cells cannot be modified
  - Unnamed players cannot update the grid
  - Older timestamps are ignored (conflict resolution)
-- Max upload size: 100 KB
+ - Max upload size: 100 KB
 
 ## Persistence
 Games are stored as JSON files (`{name}.json`) in the data directory. Writebacks are debounced by 60 seconds after the last change. When all clients disconnect, any pending changes are flushed immediately before the game is unloaded. A retention timer keeps the game in memory briefly to handle reconnections. Writebacks use a temporary file (`{name}.json.temp`) and atomic rename to prevent corruption.

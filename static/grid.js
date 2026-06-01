@@ -1,5 +1,10 @@
 /* SPDX-License-Identifier: BSD-3-Clause */
 /* Copyright (c) 2025-2026 Bjoern Boss Henrichsen */
+const GRID_TO_SCREEN_RATIO = (7 / 8);
+const GRID_MIN_SCALE = 0.05;
+const GRID_MAX_SCALE = 7.5;
+const GRID_ANIMATION_DURATION = 150;
+
 function _setupGridHtml(grid, focus, html) {
 	/* create the separate cells */
 	for (let y = 0; y < grid.height; ++y) {
@@ -223,9 +228,9 @@ function FullSerializeGrid(grid) {
 }
 
 class GridView {
+	/* Note: animates manually, as intermediate steps need to know the current scaling and
+	*	dimensions, which the css style does not provide, as it only exposes target information */
 	constructor(container, content) {
-		this._duration = 150;
-
 		this._container = container;
 		this._content = content;
 		this._grid = null;
@@ -257,7 +262,7 @@ class GridView {
 			return;
 
 		/* compute the new entry  */
-		const progress = Math.max(0, (Date.now() - this._animationStart) / this._duration);
+		const progress = Math.max(0, (Date.now() - this._animationStart) / GRID_ANIMATION_DURATION);
 		this._current.x = lerp(this._start.x, this._end.x, progress);
 		this._current.y = lerp(this._start.y, this._end.y, progress);
 		this._current.scale = lerp(this._start.scale, this._end.scale, progress);
@@ -298,10 +303,14 @@ class GridView {
 			((rSecond.bottom - rWorld.top) - (rFirst.top - rWorld.top)) / this._current.scale
 		];
 		const wSize = [rWorld.width, rWorld.height];
-		const tSize = [wSize[0] * (7 / 8), wSize[1] * (7 / 8)];
+		const tSize = [wSize[0] * GRID_TO_SCREEN_RATIO, wSize[1] * GRID_TO_SCREEN_RATIO];
+
+		/* check if the update can be skipped, because the grid currently has no extent or will have no extent */
+		if (cSize[0] <= 0 || cSize[1] <= 0)
+			return;
 
 		/* compute the scale such that the target is reached along one axis, and the other axis is smaller */
-		let scale = Math.min(tSize[0] / cSize[0], tSize[1] / cSize[1], 7.5);
+		let scale = Math.max(GRID_MIN_SCALE, Math.min(tSize[0] / cSize[0], tSize[1] / cSize[1], GRID_MAX_SCALE));
 
 		/* compute the offset between the content and the actual first cell */
 		const rContent = this._content.getBoundingClientRect();
@@ -356,7 +365,7 @@ class GridView {
 		this._update();
 
 		/* force the animation to reach the target immediately */
-		this._animationStart -= 2 * this._duration;
+		this._animationStart -= 2 * GRID_ANIMATION_DURATION;
 		this._animateNext();
 	}
 	index(x, y) {
