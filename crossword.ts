@@ -418,7 +418,7 @@ interface BurntAccess {
 	query: boolean;
 }
 
-export interface CrosswordAccess {
+export interface Access {
 	/* connection is allowed to create crosswords (default: false) */
 	create?: boolean;
 
@@ -431,8 +431,14 @@ export interface CrosswordAccess {
 	/* connection is allowed to query the crosswords (default: false) */
 	query?: boolean;
 }
-export const CrosswordEndpoints = {
-	static: '/static'
+export const Endpoints = {
+	static: '/static',
+	query: '/',
+	play: '/play',
+	editor: '/editor',
+	sockets: '/ws',
+	games: '/games',
+	game: '/game'
 }
 
 export class Crossword extends mws.ModuleHandler {
@@ -441,9 +447,9 @@ export class Crossword extends mws.ModuleHandler {
 	private fileGames: (path: string) => string;
 	private gameStates: Record<string, ActiveGame>;
 	private cache: mws.CacheHost | null;
-	private defaultAccess: CrosswordAccess;
+	private defaultAccess: BurntAccess;
 
-	constructor(dataPath: string, access?: CrosswordAccess) {
+	constructor(dataPath: string, access?: Access) {
 		super('crossword');
 
 		this.fileStatic = mws.createPathSelf(import.meta.url, '/static');
@@ -451,10 +457,15 @@ export class Crossword extends mws.ModuleHandler {
 		this.fileGames = mws.createPathLocation(dataPath);
 		this.gameStates = {};
 		this.cache = null;
-		this.defaultAccess = access ?? {};
+		this.defaultAccess = {
+			create: access?.create ?? false,
+			delete: access?.delete ?? false,
+			edit: access?.edit ?? false,
+			query: access?.query ?? false
+		};
 	}
 
-	private async modifyGame(client: mws.ClientRequest, params: BurntAccess): Promise<void> {
+	private async modifyGame(client: mws.ClientRequest, params: BurntAccess, name: string): Promise<void> {
 		/* validate the method */
 		const method = client.requireMethod(['POST', 'DELETE']);
 		if (method == null)
@@ -465,7 +476,6 @@ export class Crossword extends mws.ModuleHandler {
 			return client.respondForbidden(`Not allowed to ${method == 'POST' ? 'create' : 'delete'} crosswords`);
 
 		/* extract the name (respond with 400/404 on error, as this is a totally owned endpoint) */
-		let name = decodeURIComponent(client.path.slice(6));
 		if (!name.match(GAME_NAME_REGEX) || name.length > GAME_NAME_MAX_LENGTH) {
 			if (method == 'DELETE')
 				client.respondNotFound();
@@ -654,9 +664,10 @@ export class Crossword extends mws.ModuleHandler {
 			return null;
 		}
 	}
+	private staticPath(client: mws.ClientRequest, path: string): string {
+		return client.makePath(this.cache!.immutable(this.moduleName, mws.joinSanitized(Endpoints.static, path)));
+	}
 	private async buildMainPage(client: mws.ClientRequest, params: BurntAccess): Promise<void> {
-		const toPath = (base: string, path: string) => client.makePath(this.cache!.immutable(this.moduleName, mws.joinSanitized(base, path)));
-
 		/* check if the client is allowed to query */
 		if (!params.query)
 			return client.respondForbidden('Not allowed to query crosswords');
@@ -669,7 +680,11 @@ export class Crossword extends mws.ModuleHandler {
 		const loadConfig: string = JSON.stringify({
 			manifest: {
 				create: params.create,
-				delete: params.delete
+				delete: params.delete,
+				games: client.makePath(Endpoints.games),
+				editor: client.makePath(Endpoints.editor),
+				play: client.makePath(Endpoints.play),
+				game: client.makePath(Endpoints.game)
 			}
 		});
 
@@ -680,8 +695,8 @@ export class Crossword extends mws.ModuleHandler {
 			head: [
 				b.Meta('viewport', 'width=device-width, initial-scale=1'),
 				b.Title('Crosswords!'),
-				b.LoadStyle(toPath(CrosswordEndpoints.static, '/style.css')),
-				b.LoadScript(toPath(CrosswordEndpoints.static, '/notifier.js')),
+				b.LoadStyle(this.staticPath(client, '/style.css')),
+				b.LoadScript(this.staticPath(client, '/notifier.js')),
 				b.AddScript(`__LOAD_CONFIG__=${loadConfig}`)
 			],
 			body: b.Embed(body, true)
@@ -711,10 +726,10 @@ export class Crossword extends mws.ModuleHandler {
 			head: [
 				b.Meta('viewport', 'width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no'),
 				b.Title('Play Crossword!'),
-				b.LoadStyle(toPath(CrosswordEndpoints.static, '/style.css')),
-				b.LoadScript(toPath(CrosswordEndpoints.static, '/notifier.js')),
-				b.LoadScript(toPath(CrosswordEndpoints.static, '/sync-socket.js')),
-				b.LoadScript(toPath(CrosswordEndpoints.static, '/grid.js')),
+				b.LoadStyle(toPath(Endpoints.static, '/style.css')),
+				b.LoadScript(toPath(Endpoints.static, '/notifier.js')),
+				b.LoadScript(toPath(Endpoints.static, '/sync-socket.js')),
+				b.LoadScript(toPath(Endpoints.static, '/grid.js')),
 				b.AddScript(`__LOAD_CONFIG__=${loadConfig}`)
 			],
 			body: b.Embed(body, true)
@@ -741,8 +756,8 @@ export class Crossword extends mws.ModuleHandler {
 			head: [
 				b.Meta('viewport', 'width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no'),
 				b.Title('Crossword Editor'),
-				b.LoadStyle(toPath(CrosswordEndpoints.static, '/style.css')),
-				b.LoadScript(toPath(CrosswordEndpoints.static, '/grid.js'))
+				b.LoadStyle(toPath(Endpoints.static, '/style.css')),
+				b.LoadScript(toPath(Endpoints.static, '/grid.js'))
 			],
 			body: b.Embed(body, true)
 		});
@@ -754,20 +769,22 @@ export class Crossword extends mws.ModuleHandler {
 	}
 	protected override async handleRequest(client: mws.ClientRequest, params?: mws.Params): Promise<void> {
 		const access: BurntAccess = {
-			query: (params?.query === true ? true : this.defaultAccess.query ?? false),
-			edit: (params?.edit === true ? true : this.defaultAccess.edit ?? false),
-			delete: (params?.delete === true ? true : this.defaultAccess.delete ?? false),
-			create: (params?.create === true ? true : this.defaultAccess.create ?? false),
+			query: (params?.query === true ? true : this.defaultAccess.query),
+			edit: (params?.edit === true ? true : this.defaultAccess.edit),
+			delete: (params?.delete === true ? true : this.defaultAccess.delete),
+			create: (params?.create === true ? true : this.defaultAccess.create),
 		};
 		client.trace(`Request handler for [${client.path}] (Q: ${access.query} | E: ${access.edit} | D: ${access.delete} | C: ${access.create})`);
 
 		/* check if a game is being manipulated */
-		if (client.isInsideOf('/game/'))
-			return this.modifyGame(client, access);
+		if (client.isInsideOf(Endpoints.game)) {
+			const name = decodeURIComponent(mws.childPath(Endpoints.game, client.path).substring(1));
+			return this.modifyGame(client, access, name);
+		}
 
 		/* check if a websocket is created */
-		if (client.isInsideOf('/ws/')) {
-			let name = decodeURIComponent(client.path.slice(4));
+		if (client.isInsideOf(Endpoints.sockets)) {
+			const name = decodeURIComponent(mws.childPath(Endpoints.sockets, client.path).substring(1));
 			if (!name.match(GAME_NAME_REGEX) || name.length > GAME_NAME_MAX_LENGTH)
 				return client.respondNotFound();
 
@@ -784,22 +801,20 @@ export class Crossword extends mws.ModuleHandler {
 			return;
 
 		/* check if the games are queried */
-		if (client.path == '/games')
+		if (client.path == Endpoints.games)
 			return this.queryGames(client, access);
 
 		/* check if its one of the primary endpoints and build them dynamically */
-		if (client.path == '/main')
-			return client.respondTemporaryRedirect(client.makePath('/'));
-		if (client.path == '/')
+		if (client.path == Endpoints.query)
 			return this.buildMainPage(client, access);
-		if (client.path == '/play')
+		if (client.path == Endpoints.play)
 			return this.buildPlayPage(client, access);
-		if (client.path == '/editor')
+		if (client.path == Endpoints.editor)
 			return this.buildEditorPage(client, access);
 
 		/* check if its just static content to be served */
-		if (client.isInsideOf(CrosswordEndpoints.static))
-			await client.tryRespondFile(this.fileStatic(mws.childPath(CrosswordEndpoints.static, client.path)));
+		if (client.isInsideOf(Endpoints.static))
+			await client.tryRespondFile(this.fileStatic(mws.childPath(Endpoints.static, client.path)));
 	}
 	protected override async handleStop(): Promise<void> {
 		const list: Promise<void>[] = [];
