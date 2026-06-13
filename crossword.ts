@@ -714,7 +714,8 @@ export class Crossword extends mws.ModuleHandler {
 		const loadConfig: string = JSON.stringify({
 			manifest: {
 				edit: params.edit,
-				nameCookie: NAME_COOKIE_NAME
+				cookie: NAME_COOKIE_NAME,
+				sockets: client.makePath(Endpoints.sockets)
 			}
 		});
 

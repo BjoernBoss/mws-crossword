@@ -67,12 +67,13 @@
 		focus: null,
 		configured: false,
 		failedNotified: false,
-		manifest: { edit: false, cookie: '' }
+		manifest: {}
 	};
 
 	window.onload = function () {
 		_state.manifest.edit = __LOAD_CONFIG__.manifest?.edit ?? false;
 		_state.manifest.cookie = __LOAD_CONFIG__.manifest?.cookie ?? '';
+		_state.manifest.sockets = __LOAD_CONFIG__.manifest?.sockets ?? '/bad_manifest';
 
 		/* ensure phones handle the visibility of the keyboard properly */
 		if (window.visualViewport) {
@@ -108,7 +109,7 @@
 			document.getElementById('caption').innerText = 'Unknown Crossword!';
 
 		/* setup the socket and register all corresponding callbacks */
-		_state.sock = new SyncSocket(`./ws/${_state.game}`);
+		_state.sock = new SyncSocket(`${_state.manifest.sockets}/${_state.game}`);
 		_state.sock.onfailed = (msg) => PushNotification(msg, true, () => _state.sock.retry());
 		_state.sock.onreceived = (data) => _state.handleData(data);
 		_state.sock.onconnected = () => _state.handleConnected();
