@@ -1,8 +1,43 @@
 {
-	"name": "crossword",
+	"name": "@bjoernboss/mws-crossword",
+	"version": "1.0.0",
 	"type": "module",
-	"private": true,
+	"description": "Module in TypeScript to create and play crosswords together - For Modular Web Server",
+	"license": "BSD-3-Clause",
+	"author": "Bjoern Boss Henrichsen <bjoernbossdev@gmail.com>",
+	"repository": {
+		"type": "git",
+		"url": "git+https://github.com/BjoernBoss/mws-crossword.git"
+	},
+	"publishConfig": {
+		"access": "public"
+	},
+	"main": "dist/crossword.js",
+	"types": "dist/crossword.d.ts",
+	"exports": {
+		".": {
+			"default": "./dist/crossword.js",
+			"types": "./dist/crossword.d.ts"
+		},
+		"./package.json": "./package.json"
+	},
+	"files": [
+		"dist/**/*.js",
+		"dist/**/*.d.ts",
+		"static/**/*",
+		"pages/**/*"
+	],
 	"scripts": {
-		"build": "tsc"
+		"prepare": "tsc"
+	},
+	"dependencies": {
+		"@bjoernboss/mws": "^1.0.0"
+	},
+	"devDependencies": {
+		"@types/node": "^25.6.0",
+		"typescript": "^6.0.3"
+	},
+	"engines": {
+		"node": ">=22.0.0"
 	}
 }

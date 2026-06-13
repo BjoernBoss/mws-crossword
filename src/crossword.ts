@@ -452,8 +452,8 @@ export class Crossword extends mws.ModuleHandler {
 	constructor(dataPath: string, access?: Access) {
 		super('crossword');
 
-		this.fileStatic = mws.createPathSelf(import.meta.url, '/static');
-		this.filePages = mws.createPathSelf(import.meta.url, '/pages');
+		this.fileStatic = mws.createPathSelf(import.meta.url, '../static');
+		this.filePages = mws.createPathSelf(import.meta.url, '../pages');
 		this.fileGames = mws.createPathLocation(dataPath);
 		this.gameStates = {};
 		this.cache = null;
