@@ -1,12 +1,6 @@
 /* SPDX-License-Identifier: BSD-3-Clause */
 /* Copyright (c) 2025-2026 Bjoern Boss Henrichsen */
-import * as libHandler from "core/handler.js";
-import * as libClient from "core/client.js";
-import * as libRequest from "core/request.js";
-import * as libLog from "core/log.js";
-import * as libLocation from "core/location.js";
-import * as libBuilder from "core/builder.js";
-import * as libCache from "core/cache.js";
+import * as mws from "@bjoernboss/mws";
 import * as libFs from "fs/promises";
 
 const GAME_NAME_REGEX = /^[a-zA-Z0-9]([-_. ]?[a-zA-Z0-9])*$/;
@@ -118,8 +112,9 @@ function ParseAndValidateGameBoard(data: string, shallowGrid: boolean): GameBoar
 }
 
 class ActiveGame {
-	private logger: libLog.LogIdentity;
-	private ws: Map<libClient.ClientSocket, string>;
+	private logger: mws.Logger;
+	private cache: mws.CacheHost;
+	private ws: Map<mws.ClientSocket, string>;
 	private data: GameBoard | null;
 	private filePath: string;
 	private loading: Promise<GameLoadState>;
@@ -127,9 +122,10 @@ class ActiveGame {
 	private dropSelf: (self: ActiveGame) => void;
 	private dropped: Promise<void> | null;
 
-	constructor(logger: libLog.LogIdentity, filePath: string, dropSelf: (self: ActiveGame) => void) {
+	constructor(logger: mws.Logger, cache: mws.CacheHost, filePath: string, dropSelf: (self: ActiveGame) => void) {
 		this.logger = logger;
-		this.ws = new Map<libClient.ClientSocket, string>();
+		this.cache = cache;
+		this.ws = new Map<mws.ClientSocket, string>();
 		this.data = null;
 		this.filePath = filePath;
 		this.loading = this.loadGameState();
@@ -144,13 +140,14 @@ class ActiveGame {
 		/* try to read the game state */
 		try {
 			this.logger.log(`Loading game [${this.filePath}]...`);
-			data = await libFs.readFile(this.filePath, { encoding: 'utf-8' });
-		}
-		catch (err: any) {
-			if (err.code === 'ENOENT') {
+			const raw = await this.cache.read(this.filePath, { checkFreshness: true });
+			if (raw == null) {
 				this.logger.error(`Game [${this.filePath}] does not exist`);
 				return GameLoadState.doesNotExist;
 			}
+			data = raw.toString('utf-8');
+		}
+		catch (err: any) {
 			this.logger.error(`Failed to read the game [${this.filePath}] state: ${err.message}`);
 			return GameLoadState.corrupted;
 		}
@@ -232,11 +229,16 @@ class ActiveGame {
 		const currentState: string = JSON.stringify(this.data);
 		this.write.active = (async () => {
 			/* try to write the data back via a temporary file */
-			if (await libLocation.AtomicWrite(this.filePath, currentState, 'crossword', this.logger))
+			try {
+				await this.cache.write(this.filePath, currentState, { what: 'crossword' });
 				this.write.failed = false;
-			else if (!this.write.failed) {
-				this.write.failed = true;
-				this.notifyAll();
+			}
+			catch (err: any) {
+				this.logger.error(`Failed to write crossword [${this.filePath}]: ${err.message}`);
+				if (!this.write.failed) {
+					this.write.failed = true;
+					this.notifyAll();
+				}
 			}
 
 			/* mark the write-back as not active anymore */
@@ -290,7 +292,7 @@ class ActiveGame {
 	public waitOnGame(): Promise<GameLoadState> {
 		return this.loading;
 	}
-	public updateGrid(client: libClient.ClientSocket, grid: any): void {
+	public updateGrid(client: mws.ClientSocket, grid: any): void {
 		/* ensure that a grid exists */
 		if (this.data == null) {
 			client.warning(`Discarding grid update for corrupted load [${this.filePath}]`);
@@ -327,7 +329,7 @@ class ActiveGame {
 		this.notifyAll();
 		this.queueWriteBack(true);
 	}
-	public updateName(ws: libClient.ClientSocket, name: string): void {
+	public updateName(ws: mws.ClientSocket, name: string): void {
 		name = name.trim().slice(0, PLAYER_NAME_MAX_LENGTH);
 		if (this.ws.get(ws) == name) return;
 
@@ -335,7 +337,7 @@ class ActiveGame {
 		this.ws.set(ws, name);
 		this.notifyAll();
 	}
-	public drop(ws: libClient.ClientSocket): void {
+	public drop(ws: mws.ClientSocket): void {
 		/* remove the web-socket from the open connections */
 		const name = this.ws.get(ws) ?? '';
 		this.ws.delete(ws);
@@ -350,7 +352,7 @@ class ActiveGame {
 		else if (name != '')
 			this.notifyAll();
 	}
-	public register(ws: libClient.ClientSocket): void {
+	public register(ws: mws.ClientSocket): void {
 		if (this.dropped != null)
 			return;
 		this.ws.set(ws, '');
@@ -364,7 +366,7 @@ class ActiveGame {
 			}
 		}
 	}
-	public notifySingle(ws: libClient.ClientSocket): void {
+	public notifySingle(ws: mws.ClientSocket): void {
 		ws.send(JSON.stringify(this.buildOutput()));
 	}
 	public async disconnectAll(reason: string): Promise<void> {
@@ -423,21 +425,28 @@ export interface CrosswordAccess {
 	/* connection is allowed to query the crosswords (default: false) */
 	query?: boolean;
 }
+export const CrosswordEndpoints = {
+	static: '/static'
+}
 
-export class Crossword extends libHandler.ModuleHandler {
+export class Crossword extends mws.ModuleHandler {
 	private fileStatic: (path: string) => string;
+	private filePages: (path: string) => string;
 	private fileGames: (path: string) => string;
 	private gameStates: Record<string, ActiveGame>;
+	private cache: mws.CacheHost | null;
 
 	constructor(dataPath: string) {
 		super('crossword');
 
-		this.fileStatic = libLocation.MakeSelfPath(import.meta.url, '/static');
-		this.fileGames = libLocation.MakeLocation(dataPath);
+		this.fileStatic = mws.createPathSelf(import.meta.url, '/static');
+		this.filePages = mws.createPathSelf(import.meta.url, '/pages');
+		this.fileGames = mws.createPathLocation(dataPath);
 		this.gameStates = {};
+		this.cache = null;
 	}
 
-	private async modifyGame(client: libClient.HttpRequest, params?: CrosswordAccess): Promise<void> {
+	private async modifyGame(client: mws.ClientRequest, params?: CrosswordAccess): Promise<void> {
 		/* validate the method */
 		const method = client.requireMethod(['POST', 'DELETE']);
 		if (method == null)
@@ -467,25 +476,24 @@ export class Crossword extends libHandler.ModuleHandler {
 
 			/* remove the game file itself */
 			try {
-				await libFs.unlink(filePath);
+				if (!await this.cache!.remove(filePath)) {
+					this.error(`Game file [${filePath}] does not exist`);
+					client.respondNotFound();
+				}
+
 				this.log(`Game file [${filePath}] deleted successfully`);
 				client.respondOk({ message: `Game [${name}] deleted successfully` });
 			}
 
 			/* check if the removal failed and log it accordingly */
 			catch (err: any) {
-				if (err.code === 'ENOENT') {
-					this.error(`Game file [${filePath}] does not exist`);
-					client.respondNotFound();
-				}
-				else
-					client.respondInternalError(`Error while removing file [${filePath}]: ${err.message}`);
+				client.respondInternalError(`Error while removing file [${filePath}]: ${err.message}`);
 			}
 			return;
 		}
 
 		/* validate the content type */
-		if (client.requireMediaType(libRequest.Media.Json) == null)
+		if (client.requireMediaType(mws.Media.Json) == null)
 			return;
 
 		/* collect all of the data (failure will automatically be responded to by the receive function) */
@@ -510,21 +518,19 @@ export class Crossword extends libHandler.ModuleHandler {
 
 		/* serialize the data to the file and write it out */
 		try {
-			await libFs.writeFile(filePath, JSON.stringify(parsed), { encoding: 'utf-8', flag: 'wx' });
+			if (!await this.cache!.write(filePath, JSON.stringify(parsed), { what: 'crossword', create: true })) {
+				this.error(`Game file [${filePath}] already exists`);
+				client.respondConflict('Already exists');
+			}
 			client.respondCreated(client.makePath(`/play?name=${encodeURIComponent(name)}`));
 		}
 
 		/* check why the creating failed and log it accordingly */
 		catch (err: any) {
-			if (err.code === 'EEXIST') {
-				this.error(`Game file [${filePath}] already exists`);
-				client.respondConflict('Already exists');
-			}
-			else
-				client.respondInternalError(`Error while writing the game [${filePath}] out: ${err.message}`);
+			client.respondInternalError(`Error while writing the game [${filePath}]: ${err.message}`);
 		}
 	}
-	private async queryGames(client: libClient.HttpRequest, params?: CrosswordAccess): Promise<void> {
+	private async queryGames(client: mws.ClientRequest, params?: CrosswordAccess): Promise<void> {
 		/* check if the client is allowed to query */
 		if (params?.query !== true)
 			return client.respondForbidden('Not allowed to query crosswords');
@@ -552,15 +558,15 @@ export class Crossword extends libHandler.ModuleHandler {
 		}
 
 		/* return them to the request */
-		client.respond(JSON.stringify(out), { media: libRequest.Media.Json });
+		client.respond(JSON.stringify(out), { media: mws.Media.Json });
 	}
-	private async acceptWebSocket(client: libClient.ClientSocket, name: string, params?: CrosswordAccess): Promise<void> {
+	private async acceptWebSocket(client: mws.ClientSocket, name: string, params?: CrosswordAccess): Promise<void> {
 		client.trace(`Handling WebSocket to: [${name}]`);
 		const filePath = this.fileGames(`${name}.json`);
 
 		/* check if the game-state for the given name has already been set-up */
 		if (!(name in this.gameStates)) {
-			this.gameStates[name] = new ActiveGame(this, filePath, (game) => {
+			this.gameStates[name] = new ActiveGame(this, this.cache!, filePath, (game) => {
 				if (this.gameStates[name] === game)
 					delete this.gameStates[name];
 			});
@@ -575,11 +581,11 @@ export class Crossword extends libHandler.ModuleHandler {
 
 		/* register the callbacks (only forward update commands after the game was successfully loaded) */
 		let gameLoaded = false;
-		client.onclose = () => {
+		client.on('close', () => {
 			game.drop(client);
 			client.log(`Socket disconnected`);
-		};
-		client.ondata = (data) => {
+		});
+		client.on('data', (data) => {
 			try {
 				const parsed: any = JSON.parse(data.toString('utf-8'));
 
@@ -602,7 +608,7 @@ export class Crossword extends libHandler.ModuleHandler {
 				client.error(`Failed to parse web-socket response: ${err.message}`);
 				client.close();
 			}
-		};
+		});
 
 		/* wait for the game data to load and check if the file was found */
 		const loadState: GameLoadState = await game.waitOnGame();
@@ -623,28 +629,25 @@ export class Crossword extends libHandler.ModuleHandler {
 		gameLoaded = true;
 		game.notifySingle(client);
 	}
-	private async fetchBody(client: libClient.HttpRequest, path: string): Promise<string | null> {
-		const fullPath = this.fileStatic(path);
+	private async fetchBody(client: mws.ClientRequest, path: string): Promise<string | null> {
+		const fullPath = this.filePages(path);
 
 		/* look for the file (will never be an immutable path; consider it stable) */
-		const cached: libCache.Cached | null = libCache.GetActual(fullPath);
-		if (cached == null) {
-			client.respondInternalError(`Failed to find content [${fullPath}]`);
-			return null;
-		}
-
-		/* read the file */
 		try {
-			return (await cached.readAsync()).toString('utf-8');
+			const data: Buffer | null = await this.cache!.read(fullPath);
+			if (data == null) {
+				client.respondInternalError(`Failed to find content [${fullPath}]`);
+				return null;
+			}
+			return data.toString('utf-8');
 		}
 		catch (err: any) {
 			client.respondInternalError(`Failed to read content [${fullPath}]: ${err.message}`);
 			return null;
 		}
 	}
-	private async buildMainPage(client: libClient.HttpRequest, params?: CrosswordAccess): Promise<void> {
-		const toPath = (path: string) => client.makePath(libCache.MakeImmutable(this.moduleName, path));
-		const b = libBuilder;
+	private async buildMainPage(client: mws.ClientRequest, params?: CrosswordAccess): Promise<void> {
+		const toPath = (base: string, path: string) => client.makePath(this.cache!.immutable(this.moduleName, mws.joinSanitized(base, path)));
 
 		/* check if the client is allowed to query */
 		if (params?.query !== true)
@@ -663,22 +666,22 @@ export class Crossword extends libHandler.ModuleHandler {
 		});
 
 		/* add the required page headers and load the content from cache */
-		const page = new libBuilder.HtmlPage({
+		const b = mws.build;
+		const page = new b.HtmlPage({
 			language: 'en',
 			head: [
 				b.Meta('viewport', 'width=device-width, initial-scale=1'),
 				b.Title('Crosswords!'),
-				b.LoadStyle(toPath('/style.css')),
-				b.LoadScript(toPath('/notifier.js')),
+				b.LoadStyle(toPath(CrosswordEndpoints.static, '/style.css')),
+				b.LoadScript(toPath(CrosswordEndpoints.static, '/notifier.js')),
 				b.AddScript(`__LOAD_CONFIG__=${loadConfig}`)
 			],
 			body: b.Embed(body, true)
 		});
-		await client.respondHtml(page, { status: libRequest.Status.Ok });
+		await client.respondHtml(page, { status: mws.Status.Ok });
 	}
-	private async buildPlayPage(client: libClient.HttpRequest, params?: CrosswordAccess): Promise<void> {
-		const toPath = (path: string) => client.makePath(libCache.MakeImmutable(this.moduleName, path));
-		const b = libBuilder;
+	private async buildPlayPage(client: mws.ClientRequest, params?: CrosswordAccess): Promise<void> {
+		const toPath = (base: string, path: string) => client.makePath(this.cache!.immutable(this.moduleName, mws.joinSanitized(base, path)));
 
 		/* read the body */
 		const body: string | null = await this.fetchBody(client, '/play.html');
@@ -694,24 +697,24 @@ export class Crossword extends libHandler.ModuleHandler {
 
 		/* add the required page headers and load the content from cache (prevent
 		*	user-zooming as this breaks viewport handling for keyboard-detection) */
-		const page = new libBuilder.HtmlPage({
+		const b = mws.build;
+		const page = new b.HtmlPage({
 			language: 'en',
 			head: [
 				b.Meta('viewport', 'width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no'),
 				b.Title('Play Crossword!'),
-				b.LoadStyle(toPath('/style.css')),
-				b.LoadScript(toPath('/notifier.js')),
-				b.LoadScript(toPath('/sync-socket.js')),
-				b.LoadScript(toPath('/grid.js')),
+				b.LoadStyle(toPath(CrosswordEndpoints.static, '/style.css')),
+				b.LoadScript(toPath(CrosswordEndpoints.static, '/notifier.js')),
+				b.LoadScript(toPath(CrosswordEndpoints.static, '/sync-socket.js')),
+				b.LoadScript(toPath(CrosswordEndpoints.static, '/grid.js')),
 				b.AddScript(`__LOAD_CONFIG__=${loadConfig}`)
 			],
 			body: b.Embed(body, true)
 		});
-		await client.respondHtml(page, { status: libRequest.Status.Ok });
+		await client.respondHtml(page, { status: mws.Status.Ok });
 	}
-	private async buildEditorPage(client: libClient.HttpRequest, params?: CrosswordAccess): Promise<void> {
-		const toPath = (path: string) => client.makePath(libCache.MakeImmutable(this.moduleName, path));
-		const b = libBuilder;
+	private async buildEditorPage(client: mws.ClientRequest, params?: CrosswordAccess): Promise<void> {
+		const toPath = (base: string, path: string) => client.makePath(this.cache!.immutable(this.moduleName, mws.joinSanitized(base, path)));
 
 		/* check if the client is allowed to edit */
 		if (params?.create !== true)
@@ -724,25 +727,43 @@ export class Crossword extends libHandler.ModuleHandler {
 
 		/* add the required page headers and load the content from cache (prevent
 		*	user-zooming as this breaks viewport handling for keyboard-detection) */
-		const page = new libBuilder.HtmlPage({
+		const b = mws.build;
+		const page = new b.HtmlPage({
 			language: 'en',
 			head: [
 				b.Meta('viewport', 'width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no'),
 				b.Title('Crossword Editor'),
-				b.LoadStyle(toPath('/style.css')),
-				b.LoadScript(toPath('/grid.js'))
+				b.LoadStyle(toPath(CrosswordEndpoints.static, '/style.css')),
+				b.LoadScript(toPath(CrosswordEndpoints.static, '/grid.js'))
 			],
 			body: b.Embed(body, true)
 		});
-		await client.respondHtml(page, { status: libRequest.Status.Ok });
+		await client.respondHtml(page, { status: mws.Status.Ok });
 	}
 
-	protected override async handleRequest(client: libClient.HttpRequest, params?: CrosswordAccess): Promise<void> {
+	protected override async handleInitialize(server: mws.Server): Promise<void> {
+		this.cache = server.cache;
+	}
+	protected override async handleRequest(client: mws.ClientRequest, params?: CrosswordAccess): Promise<void> {
 		client.trace(`Request handler for [${client.path}]`);
 
 		/* check if a game is being manipulated */
-		if (client.path.startsWith('/game/'))
+		if (client.isInsideOf('/game/'))
 			return this.modifyGame(client, params);
+
+		/* check if a websocket is created */
+		if (client.isInsideOf('/ws/')) {
+			let name = decodeURIComponent(client.path.slice(4));
+			if (!name.match(GAME_NAME_REGEX) || name.length > GAME_NAME_MAX_LENGTH)
+				return client.respondNotFound();
+
+			/* try to accept the web socket and handle it (await acceptance to ensure the
+			*	stop method is not entered before the full accept has been performed) */
+			const ws = await client.acceptWebSocket();
+			if (ws != null)
+				await this.acceptWebSocket(ws, name, params);
+			return;
+		}
 
 		/* all other endpoints only support 'getting' */
 		if (client.requireMethod('GET') == null)
@@ -762,35 +783,9 @@ export class Crossword extends libHandler.ModuleHandler {
 		if (client.path == '/editor')
 			return this.buildEditorPage(client, params);
 
-		/* respond to the request by trying to serve the file (discard html requests) */
-		if (!client.path.toLowerCase().endsWith('.html'))
-			await client.tryRespondFile(this.fileStatic(client.path));
-	}
-	protected override async handleUpgrade(client: libClient.HttpUpgrade, params?: CrosswordAccess): Promise<void> {
-		client.trace(`WebSocket for [${client.path}]`);
-
-		/* check if a web-socket is connecting */
-		if (!client.path.startsWith('/ws/'))
-			return;
-
-		/* extract the name and validate it (return with not-found as the entire endpoint is owned) */
-		let name = decodeURIComponent(client.path.slice(4));
-		if (!name.match(GAME_NAME_REGEX) || name.length > GAME_NAME_MAX_LENGTH)
-			return client.respondNotFound();
-
-		/* try to accept the web socket and handle it (await acceptance to ensure the
-		*	stop method is not entered before the full accept has been performed) */
-		const ws = await client.acceptWebSocket();
-		if (ws != null)
-			await this.acceptWebSocket(ws, name, params);
-	}
-	protected override async handleDetached(): Promise<void> {
-		const list: Promise<void>[] = [];
-
-		/* disconnect all players (no new games can be started as no connections will enter the module anymore) */
-		for (const game of Object.values(this.gameStates))
-			list.push(game.disconnectAll('shutdown'));
-		await Promise.all(list);
+		/* check if its just static content to be served */
+		if (client.isInsideOf(CrosswordEndpoints.static))
+			await client.tryRespondFile(this.fileStatic(mws.childPath(CrosswordEndpoints.static, client.path)));
 	}
 	protected override async handleStop(): Promise<void> {
 		const list: Promise<void>[] = [];
