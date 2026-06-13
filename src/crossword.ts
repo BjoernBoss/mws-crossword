@@ -446,7 +446,6 @@ export class Crossword extends mws.ModuleHandler {
 	private filePages: (path: string) => string;
 	private fileGames: (path: string) => string;
 	private gameStates: Record<string, ActiveGame>;
-	private cache: mws.CacheHost | null;
 	private defaultAccess: BurntAccess;
 
 	constructor(dataPath: string, access?: Access) {
@@ -456,7 +455,6 @@ export class Crossword extends mws.ModuleHandler {
 		this.filePages = mws.createPathSelf(import.meta.url, '../pages');
 		this.fileGames = mws.createPathLocation(dataPath);
 		this.gameStates = {};
-		this.cache = null;
 		this.defaultAccess = {
 			create: access?.create ?? false,
 			delete: access?.delete ?? false,
@@ -494,7 +492,7 @@ export class Crossword extends mws.ModuleHandler {
 
 			/* remove the game file itself */
 			try {
-				if (!await this.cache!.remove(filePath)) {
+				if (!await this.cache.remove(filePath)) {
 					this.error(`Game file [${filePath}] does not exist`);
 					client.respondNotFound();
 				}
@@ -536,7 +534,7 @@ export class Crossword extends mws.ModuleHandler {
 
 		/* serialize the data to the file and write it out */
 		try {
-			if (!await this.cache!.write(filePath, JSON.stringify(parsed), { what: 'crossword', create: true })) {
+			if (!await this.cache.write(filePath, JSON.stringify(parsed), { what: 'crossword', create: true })) {
 				this.error(`Game file [${filePath}] already exists`);
 				client.respondConflict('Already exists');
 			}
@@ -584,7 +582,7 @@ export class Crossword extends mws.ModuleHandler {
 
 		/* check if the game-state for the given name has already been set-up */
 		if (!(name in this.gameStates)) {
-			this.gameStates[name] = new ActiveGame(this, this.cache!, filePath, (game) => {
+			this.gameStates[name] = new ActiveGame(this, this.cache, filePath, (game) => {
 				if (this.gameStates[name] === game)
 					delete this.gameStates[name];
 			});
@@ -652,7 +650,7 @@ export class Crossword extends mws.ModuleHandler {
 
 		/* look for the file (will never be an immutable path; consider it stable) */
 		try {
-			const data: Buffer | null = await this.cache!.read(fullPath);
+			const data: Buffer | null = await this.cache.read(fullPath);
 			if (data == null) {
 				client.respondInternalError(`Failed to find content [${fullPath}]`);
 				return null;
@@ -665,7 +663,7 @@ export class Crossword extends mws.ModuleHandler {
 		}
 	}
 	private staticPath(client: mws.ClientRequest, path: string): string {
-		return client.makePath(this.cache!.immutable(this.moduleName, mws.joinSanitized(Endpoints.static, path)));
+		return client.makePath(this.cache.immutable(this.name, mws.joinSanitized(Endpoints.static, path)));
 	}
 	private async buildMainPage(client: mws.ClientRequest, params: BurntAccess): Promise<void> {
 		/* check if the client is allowed to query */
@@ -704,7 +702,7 @@ export class Crossword extends mws.ModuleHandler {
 		await client.respondHtml(page, { status: mws.Status.Ok });
 	}
 	private async buildPlayPage(client: mws.ClientRequest, params: BurntAccess): Promise<void> {
-		const toPath = (base: string, path: string) => client.makePath(this.cache!.immutable(this.moduleName, mws.joinSanitized(base, path)));
+		const toPath = (base: string, path: string) => client.makePath(this.cache.immutable(this.name, mws.joinSanitized(base, path)));
 
 		/* read the body */
 		const body: string | null = await this.fetchBody(client, '/play.html');
@@ -738,7 +736,7 @@ export class Crossword extends mws.ModuleHandler {
 		await client.respondHtml(page, { status: mws.Status.Ok });
 	}
 	private async buildEditorPage(client: mws.ClientRequest, params: BurntAccess): Promise<void> {
-		const toPath = (base: string, path: string) => client.makePath(this.cache!.immutable(this.moduleName, mws.joinSanitized(base, path)));
+		const toPath = (base: string, path: string) => client.makePath(this.cache.immutable(this.name, mws.joinSanitized(base, path)));
 
 		/* check if the client is allowed to edit */
 		if (!params.create)
@@ -773,9 +771,6 @@ export class Crossword extends mws.ModuleHandler {
 		await client.respondHtml(page, { status: mws.Status.Ok });
 	}
 
-	protected override async handleInitialize(server: mws.Server): Promise<void> {
-		this.cache = server.cache;
-	}
 	protected override async handleRequest(client: mws.ClientRequest, params?: mws.Params): Promise<void> {
 		const access: BurntAccess = {
 			query: (params?.query === true ? true : this.defaultAccess.query),
