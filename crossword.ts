@@ -433,7 +433,7 @@ export interface Access {
 }
 export const Endpoints = {
 	static: '/static',
-	query: '/',
+	list: '/',
 	play: '/play',
 	editor: '/editor',
 	sockets: '/ws',
@@ -748,6 +748,13 @@ export class Crossword extends mws.ModuleHandler {
 		if (body == null)
 			return;
 
+		const loadConfig: string = JSON.stringify({
+			manifest: {
+				list: client.makePath(Endpoints.list),
+				game: client.makePath(Endpoints.game)
+			}
+		});
+
 		/* add the required page headers and load the content from cache (prevent
 		*	user-zooming as this breaks viewport handling for keyboard-detection) */
 		const b = mws.build;
@@ -757,7 +764,8 @@ export class Crossword extends mws.ModuleHandler {
 				b.Meta('viewport', 'width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no'),
 				b.Title('Crossword Editor'),
 				b.LoadStyle(toPath(Endpoints.static, '/style.css')),
-				b.LoadScript(toPath(Endpoints.static, '/grid.js'))
+				b.LoadScript(toPath(Endpoints.static, '/grid.js')),
+				b.AddScript(`__LOAD_CONFIG__=${loadConfig}`)
 			],
 			body: b.Embed(body, true)
 		});
@@ -805,7 +813,7 @@ export class Crossword extends mws.ModuleHandler {
 			return this.queryGames(client, access);
 
 		/* check if its one of the primary endpoints and build them dynamically */
-		if (client.path == Endpoints.query)
+		if (client.path == Endpoints.list)
 			return this.buildMainPage(client, access);
 		if (client.path == Endpoints.play)
 			return this.buildPlayPage(client, access);

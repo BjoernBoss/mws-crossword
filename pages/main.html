@@ -37,17 +37,6 @@
 <script>
 	let _state = { removing: null, busy: false, manifest: {} };
 
-	_state.makeUrl = function (path) {
-		let current = document.location.pathname;
-		if (path == '' || path == '.')
-			return current;
-		if (!current.endsWith('/'))
-			current += '/';
-		if (path.startsWith('/') || path.startsWith('./'))
-			path = path.substring(path.indexOf('/') + 1);
-		return current + path;
-	}
-
 	window.onload = function () {
 		_state.manifest.create = __LOAD_CONFIG__.manifest?.create ?? false;
 		_state.manifest.delete = __LOAD_CONFIG__.manifest?.delete ?? false;
