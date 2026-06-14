@@ -1,0 +1,35 @@
+<!-- SPDX-License-Identifier: BSD-3-Clause -->
+<!-- Copyright (c) 2026 Bjoern Boss Henrichsen -->
+<div contenteditable="false" class="main-body">
+	<!-- remove screen -->
+	<div id="remove" class="overlay">
+		<div class="dialog" style="min-width: 400px;">
+			<div id="remove-caption" class="caption">Remove: Caption</div>
+			<div id="remove-disclaimer" style="margin: 15px;">Disclaimer!</div>
+			<div id="remove-busy" class="error" style="margin: 0px 15px 15px 15px;">Page is busy...</div>
+			<div class="confirm">
+				<div class="button" style="width: 100px;" onclick="_state.doRemove()">Remove</div>
+				<div style="width: 15px;"></div>
+				<div class="button" style="width: 100px;" onclick="_state.cancelRemove()">Cancel</div>
+			</div>
+		</div>
+	</div>
+
+	<!-- notification placeholder -->
+	<div id="notification-host" class="notification-host"></div>
+
+	<!-- main view -->
+	<div class="main">
+		<!-- selection view -->
+		<div class="content" id="container">
+			<div class="scroll-view">
+				<div style="margin: 30px; min-width: 250px; max-width: 450px; width: calc(100% - 60px); display: flex; flex-direction: column; gap: 20px;"
+					id="content">
+				</div>
+			</div>
+		</div>
+
+		<!-- main footer -->
+		<div class="footer">Crosswords can be created and edited together. Deleted crosswords cannot be recovered.</div>
+	</div>
+</div>

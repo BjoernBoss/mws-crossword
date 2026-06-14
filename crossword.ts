@@ -699,13 +699,13 @@ export class Crossword extends mws.ModuleHandler {
 	private staticPath(client: mws.ClientRequest, path: string): string {
 		return client.makePath(this.cache.immutable(this.name, mws.joinSanitized(Endpoints.static, path)));
 	}
-	private async buildMainPage(client: mws.ClientRequest, access: BurntAccess): Promise<void> {
+	private async buildLobbyPage(client: mws.ClientRequest, access: BurntAccess): Promise<void> {
 		/* check if the client is allowed to query */
 		if (!access.query)
 			return client.respondForbidden('Not allowed to query crosswords');
 
 		/* read the body */
-		const body: string | null = await this.fetchBody(client, '/main.html');
+		const body: string | null = await this.fetchBody(client, '/lobby.html');
 		if (body == null)
 			return;
 
@@ -729,6 +729,7 @@ export class Crossword extends mws.ModuleHandler {
 				b.Title('Crosswords!'),
 				b.LoadStyle(this.staticPath(client, '/style.css')),
 				b.LoadScript(this.staticPath(client, '/notifier.js')),
+				b.LoadScript(this.staticPath(client, '/lobby.js')),
 				b.AddScript(`__LOAD_CONFIG__=${loadConfig}`)
 			],
 			body: b.Embed(body, true)
@@ -736,8 +737,6 @@ export class Crossword extends mws.ModuleHandler {
 		await client.respondHtml(page, { status: mws.Status.Ok });
 	}
 	private async buildPlayPage(client: mws.ClientRequest, access: BurntAccess): Promise<void> {
-		const toPath = (base: string, path: string) => client.makePath(this.cache.immutable(this.name, mws.joinSanitized(base, path)));
-
 		/* read the body */
 		const body: string | null = await this.fetchBody(client, '/play.html');
 		if (body == null)
@@ -762,10 +761,11 @@ export class Crossword extends mws.ModuleHandler {
 			head: [
 				b.Meta('viewport', 'width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no'),
 				b.Title('Play Crossword!'),
-				b.LoadStyle(toPath(Endpoints.static, '/style.css')),
-				b.LoadScript(toPath(Endpoints.static, '/notifier.js')),
-				b.LoadScript(toPath(Endpoints.static, '/sync-socket.js')),
-				b.LoadScript(toPath(Endpoints.static, '/grid.js')),
+				b.LoadStyle(this.staticPath(client, '/style.css')),
+				b.LoadScript(this.staticPath(client, '/notifier.js')),
+				b.LoadScript(this.staticPath(client, '/sync-socket.js')),
+				b.LoadScript(this.staticPath(client, '/grid.js')),
+				b.LoadScript(this.staticPath(client, '/play.js')),
 				b.AddScript(`__LOAD_CONFIG__=${loadConfig}`)
 			],
 			body: b.Embed(body, true)
@@ -773,8 +773,6 @@ export class Crossword extends mws.ModuleHandler {
 		await client.respondHtml(page, { status: mws.Status.Ok });
 	}
 	private async buildEditorPage(client: mws.ClientRequest, access: BurntAccess): Promise<void> {
-		const toPath = (base: string, path: string) => client.makePath(this.cache.immutable(this.name, mws.joinSanitized(base, path)));
-
 		/* check if the client is allowed to edit */
 		if (!access.create)
 			return client.respondForbidden('Not allowed to create crosswords');
@@ -799,8 +797,9 @@ export class Crossword extends mws.ModuleHandler {
 			head: [
 				b.Meta('viewport', 'width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no'),
 				b.Title('Crossword Editor'),
-				b.LoadStyle(toPath(Endpoints.static, '/style.css')),
-				b.LoadScript(toPath(Endpoints.static, '/grid.js')),
+				b.LoadStyle(this.staticPath(client, '/style.css')),
+				b.LoadScript(this.staticPath(client, '/grid.js')),
+				b.LoadScript(this.staticPath(client, '/editor.js')),
 				b.AddScript(`__LOAD_CONFIG__=${loadConfig}`)
 			],
 			body: b.Embed(body, true)
@@ -847,7 +846,7 @@ export class Crossword extends mws.ModuleHandler {
 
 		/* check if its one of the primary endpoints and build them dynamically */
 		if (client.path == Endpoints.lobby)
-			return this.buildMainPage(client, access);
+			return this.buildLobbyPage(client, access);
 		if (client.path == Endpoints.play)
 			return this.buildPlayPage(client, access);
 		if (client.path == Endpoints.editor)
