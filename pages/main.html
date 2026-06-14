@@ -103,7 +103,7 @@
 					/* add the next entry */
 					let entry = document.createElement('a');
 					entry.classList.add('button', 'menu-option');
-					entry.href = `${_state.manifest.play}?game=${name}`;
+					entry.href = `${_state.manifest.play}?game=${encodeURIComponent(name)}`;
 					content.appendChild(entry);
 
 					let text = document.createElement('div');

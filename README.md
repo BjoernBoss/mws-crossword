@@ -2,63 +2,112 @@
 ![TypeScript](https://img.shields.io/badge/language-TypeScript-blue?style=flat-square)
 [![License](https://img.shields.io/badge/license-BSD--3--Clause-brightgreen?style=flat-square)](LICENSE.txt)
 
-A collaborative crossword module for [`MWS-Base`](https://github.com/BjoernBoss/mws-base.git). Players can create, edit, and solve crossword puzzles together in real time using WebSockets.
+A collaborative crossword module for [`@bjoernboss/mws`](https://github.com/BjoernBoss/mws).
 
-Game state is stored as JSON files in a configurable data directory and persists across server restarts. All active sessions are managed by the `Crossword` object; sharing it across multiple ports gives each port access to the same game state and player base.
+Players can create, edit, and solve crossword puzzles together in real time using WebSockets.
+
+Game state is stored as JSON files in a configurable data directory and persists across server restarts. All active sessions are managed by the `Crossword` module; sharing it across multiple listeners gives each listener access to the same game state and player base.
+
+## Installation
+
+	$ npm install @bjoernboss/mws-crossword
+
+Requires Node.js 22 or later.
 
 ## Setup
-Clone into the modules directory of an existing MWS-Base installation:
 
-    $ git clone https://github.com/BjoernBoss/mws-crossword.git modules/crossword
+The `Crossword` module takes a data directory path and an optional `Access` object controlling what operations clients may perform. Mount it under a path using `dispatch`:
 
-Register the module in `modules/setup.js`:
+```typescript
+import { Server, dispatch, addLogger, createConsoleLogger } from "@bjoernboss/mws";
+import { Crossword } from "@bjoernboss/mws-crossword";
 
-```JavaScript
-import * as libHandler from "core/handler.js";
+addLogger(createConsoleLogger());
 
-export async function Run(server) {
-    try {
-        const crossword = await import("crossword/crossword.js");
-        const dispatch = new libHandler.DispatchModule({
-            '/crossword': new crossword.Crossword('./local_data/crossword'),
-        });
-        server.listenHttp(8080, dispatch, (host) => host == 'localhost');
-    } catch (e) {
-        throw new Error(`Failed to load module: ${e.message}`);
-    }
-}
+const server = new Server();
+const crossword = new Crossword('./data/crossword', {
+    query: true,
+    create: true,
+    delete: true,
+    edit: true
+});
+
+server.listen(dispatch({ '/crossword': crossword }), { port: 8080 });
 ```
 
-Then just build and run the server as usual.
+The module serves its own pages, static assets, and WebSocket endpoints from its mount point. Navigate to `http://localhost:8080/crossword/` to open the lobby.
 
-## HTTP Endpoints
-| Method | Path | Description |
+## Access Control
+
+The `Access` object controls which operations are allowed. All default to `false`, so at minimum `query` and `edit` should be enabled for a functional game:
+
+| Field | Default | Description |
 |---|---|---|
-| GET | `/` | Game lobby: list, create, and delete crosswords |
-| GET | `/main` | Redirect to `/` page |
-| GET | `/play` | Play/solve a crossword collaboratively |
-| GET | `/editor` | Create a new crossword layout |
-| GET | `/games` | JSON array of available game names |
-| POST | `/game/{name}` | Create a new game (JSON body with `width`, `height`, `grid`) |
-| DELETE | `/game/{name}` | Delete an existing game |
-| GET | `/*.{css\|js}` | Static assets |
-| WebSocket | `/ws/{name}` | Join a game session |
+| `query` | `false` | List existing games and view the lobby page |
+| `create` | `false` | Create new crossword puzzles via the editor |
+| `delete` | `false` | Delete existing crossword puzzles |
+| `edit` | `false` | Modify game cells and set player names via WebSocket |
+
+Access can also be granted per-request through `params` when dispatching to the module. Request parameter override the corresponding default, allowing parent modules to implement authentication or per-route access policies.
+
+## Endpoints
+
+The `Endpoints` export provides the path constants used by the module. All paths are relative to the module's mount point.
+
+| Path | Method | Description |
+|---|---|---|
+| `/` | GET | Game lobby: list, create, and delete crosswords |
+| `/play` | GET | Play/solve a crossword collaboratively (query param: `game`) |
+| `/editor` | GET | Create a new crossword layout |
+| `/games` | GET | JSON array of available game names |
+| `/game/{name}` | POST | Create a new game (JSON body with `width`, `height`, `grid`) |
+| `/game/{name}` | DELETE | Delete an existing game |
+| `/static/*` | GET | Static assets (CSS, JS) served with immutable cache headers |
+| `/ws/{name}` | WebSocket | Join a game session |
+
+## WebSocket Protocol
+
+Clients connect to `/ws/{name}` to join a game session. The server sends the full game state as a JSON object on connection and after every change. Clients send JSON commands to interact with the game.
+
+### Client Commands
+
+| Command | Fields | Description |
+|---|---|---|
+| `name` | `{ cmd: 'name', name: string }` | Set the player name (required before grid updates are accepted) |
+| `update` | `{ cmd: 'update', data: GridCell[] }` | Push a grid update; cells use timestamp-based conflict resolution |
+
+### Server Messages
+
+The server sends either a `GameState` object or a string error identifier:
+
+- **`GameState`** object: `{ failed, width, height, grid, names, online }` where `failed` indicates a write-back error, `names` lists all known players (online and from grid history), and `online` lists currently connected players.
+- **`"unknown-game"`**: the requested game does not exist.
+- **`"corrupted-game"`**: the game file could not be parsed.
+- **`"dropped-game"`**: the game was deleted while connected.
+- **`"shutdown"`**: the server is shutting down.
+
+After an error identifier is sent, the server closes the WebSocket.
+
+### Conflict Resolution
+
+Each cell carries a timestamp. When a client pushes an update, only cells with a newer timestamp than the server's current state are applied. Cells with equal or older timestamps are silently discarded. This ensures that concurrent edits from multiple players converge without explicit locking.
+
+## Game Rules
+
+- Grid dimensions: 1x1 to 64x64
+- Game names: alphanumeric with hyphens, dots, spaces, and underscores (max 64 characters)
+- Characters: uppercase A-Z only (lowercase input is uppercased; non-letter input is rejected)
+- Solid cells cannot be modified
+- Unnamed players cannot update the grid
+- Crossword numbering is assigned automatically based on standard crossword conventions (a cell gets a number if it starts a horizontal or vertical word)
+- Max upload size: 100 KB
+
+## Persistence
+
+Games are stored as JSON files (`{name}.json`) in the data directory. Writebacks are debounced by 60 seconds after the last change. When all clients disconnect, any pending changes are flushed immediately before the game is unloaded from memory. A retention timer keeps the game loaded briefly after the last disconnect to handle quick reconnections.
+
+If a writeback fails, the game state notifies all connected clients via the `failed` flag. The server retries the writeback on the next debounce cycle. If all clients disconnect while the writeback is still failing, the in-memory state is lost and a warning is logged.
 
 ## Cookies
 
-The client code sets the cookie `crossword-last-name` to the last used player name, to retrieve and reuse it on the next refresh.
-
-## WebSocket Protocol
-Upon each connection established to a known crossword game, the WebSocket clients can give themselves a name, and then push game updates. The game will notify all connected clients upon game changes. Should the game not exist, be corrupted, or be removed, the server will respond with short descriptive error identifiers, and then discard any further game state update requests.
-
-## Game Rules
- - Grid dimensions: 1x1 to 64x64
- - Game names: alphanumeric with hyphens, dots, spaces, and underscores (max 64 characters)
- - Characters: uppercase A-Z only (lowercase input is uppercased; non-letter input is rejected)
- - Solid cells cannot be modified
- - Unnamed players cannot update the grid
- - Older timestamps are ignored (conflict resolution)
- - Max upload size: 100 KB
-
-## Persistence
-Games are stored as JSON files (`{name}.json`) in the data directory. Writebacks are debounced by 60 seconds after the last change. When all clients disconnect, any pending changes are flushed immediately before the game is unloaded. A retention timer keeps the game in memory briefly to handle reconnections. Writebacks use a temporary file (`{name}.json.temp`) and atomic rename to prevent corruption.
+The play page stores the last used player name in a cookie (`crossword-last-name`, 24-hour lifetime) so it can be pre-filled on the next visit.

@@ -60,12 +60,12 @@
 	const GAME_NAME_REGEX = /^[a-zA-Z0-9]([-_. ]?[a-zA-Z0-9])*$/;
 	const GAME_NAME_MAX_LENGTH = 64;
 
-	let _state = { dirty: false, uploading: false, uploaded: false, manifest: {} };
+	let _state = { dirty: false, uploading: false, manifest: {} };
 
-	window.onbeforeunload = function () { if (!_state.dirty || _state.uploaded) return null; return "Your work will be lost."; };
+	window.onbeforeunload = function () { if (!_state.dirty) return null; return "Your work will be lost."; };
 
 	window.onload = function () {
-		_state.manifest.list = __LOAD_CONFIG__.manifest?.list ?? '/bad_manifest';
+		_state.manifest.lobby = __LOAD_CONFIG__.manifest?.lobby ?? '/bad_manifest';
 		_state.manifest.game = __LOAD_CONFIG__.manifest?.game ?? '/bad_manifest';
 
 		/* ensure phones handle the visibility of the keyboard properly */
@@ -82,7 +82,7 @@
 		/* validate the dimension */
 		const width = parseInt(document.getElementById('width').value);
 		const height = parseInt(document.getElementById('height').value);
-		if (!isFinite(width) || !isFinite(height) || width < 0 || width > 64 || height < 0 || height > 64) {
+		if (!isFinite(width) || !isFinite(height) || width < 1 || width > 64 || height < 1 || height > 64) {
 			alert("Invalid dimensions specified");
 			return;
 		}
@@ -134,7 +134,7 @@
 			else
 				_state.moveToggle(e.touches[0].clientX, e.touches[0].clientY);
 		});
-		content.addEventListener('touchstop', function (e) {
+		content.addEventListener('touchend', function (e) {
 			_state.stopToggle();
 			e.preventDefault();
 			e.stopPropagation();
@@ -169,7 +169,7 @@
 
 		/* serialize the grid */
 		let out = SolidSerializeAll(_state.grid);
-		document.getElementById("finalize").classList.remove('show');
+		document.getElementById('error').classList.remove('show');
 
 		/* post the result out */
 		_state.uploading = true;
@@ -178,13 +178,16 @@
 				/* redirect to the main page */
 				if (!resp.ok)
 					throw new Error(resp.statusText);
-				_state.uploaded = true;
-				document.location = `${_state.manifest.list}?uploaded=${name}`;
+
+				document.getElementById("finalize").classList.remove('show');
+				_state.dirty = false;
+				_state.uploading = false;
+
+				document.location = `${_state.manifest.lobby}?uploaded=${name}`;
 			}).catch(function (e) {
 				/* post the error */
-				document.getElementById("finalize").classList.add('show');
-				document.getElementById('error').innerText = `Error while uploading the edited crossword: ${e.message}`;
 				document.getElementById('error').classList.add('show');
+				document.getElementById('error').innerText = `Error while uploading the edited crossword: ${e.message}`;
 				_state.uploading = false;
 			});
 	}

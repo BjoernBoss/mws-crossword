@@ -418,29 +418,54 @@ interface BurntAccess {
 	query: boolean;
 }
 
+/**
+ *	Access mask is created by merging the handler-params as access mask with the default access mask.
+ *	The properties decide whether or not a given client has access to the corresponding abilities (otherwise results in 403).
+ */
 export interface Access {
-	/* connection is allowed to create crosswords (default: false) */
+	/** connection is allowed to create crosswords (default: false) */
 	create?: boolean;
 
-	/* connection is allowed to delete crosswords (default: false) */
+	/** connection is allowed to delete crosswords (default: false) */
 	delete?: boolean;
 
-	/* connection is allowed to edit crosswords (default: false) */
+	/** connection is allowed to edit crosswords (default: false) */
 	edit?: boolean;
 
-	/* connection is allowed to query the crosswords (default: false) */
+	/** connection is allowed to query the crosswords (default: false) */
 	query?: boolean;
 }
+
+/**
+ *	Endpoints used by the crossword.
+ *	This mapping can be used to translate components of the crossword to different paths in the URL space.
+ */
 export const Endpoints = {
+	/** directory containting static assets */
 	static: '/static',
-	list: '/',
+
+	/** endpoint for viewing the game lobby */
+	lobby: '/',
+
+	/** endpoint for playing a given game */
 	play: '/play',
+
+	/** endpoint for creating a game */
 	editor: '/editor',
+
+	/** directory for web-sockets (fully owned, auto-responds with 404) */
 	sockets: '/ws',
+
+	/** endpoint to query the registered games */
 	games: '/games',
+
+	/** directory to manage a game (fully owned, auto-responds with 404) */
 	game: '/game'
 }
 
+/**
+ *	The crossword caches game state data internally, no two crosswords should be mapped to the same directory at the same time.
+ */
 export class Crossword extends mws.ModuleHandler {
 	private fileStatic: (path: string) => string;
 	private filePages: (path: string) => string;
@@ -448,6 +473,7 @@ export class Crossword extends mws.ModuleHandler {
 	private gameStates: Record<string, ActiveGame>;
 	private defaultAccess: BurntAccess;
 
+	/** [dataPath] describes the directory, which contains all of the games; [access] describes the default access mask */
 	constructor(dataPath: string, access?: Access) {
 		super('crossword');
 
@@ -494,7 +520,7 @@ export class Crossword extends mws.ModuleHandler {
 			try {
 				if (!await this.cache.remove(filePath)) {
 					this.error(`Game file [${filePath}] does not exist`);
-					client.respondNotFound();
+					return client.respondNotFound();
 				}
 
 				this.log(`Game file [${filePath}] deleted successfully`);
@@ -536,7 +562,7 @@ export class Crossword extends mws.ModuleHandler {
 		try {
 			if (!await this.cache.write(filePath, JSON.stringify(parsed), { what: 'crossword', create: true })) {
 				this.error(`Game file [${filePath}] already exists`);
-				client.respondConflict('Already exists');
+				return client.respondConflict('Already exists');
 			}
 			client.respondCreated(client.makePath(`/play?name=${encodeURIComponent(name)}`));
 		}
@@ -749,7 +775,7 @@ export class Crossword extends mws.ModuleHandler {
 
 		const loadConfig: string = JSON.stringify({
 			manifest: {
-				list: client.makePath(Endpoints.list),
+				lobby: client.makePath(Endpoints.lobby),
 				game: client.makePath(Endpoints.game)
 			}
 		});
@@ -773,20 +799,20 @@ export class Crossword extends mws.ModuleHandler {
 
 	protected override async handleRequest(client: mws.ClientRequest, params?: mws.Params): Promise<void> {
 		const access: BurntAccess = {
-			query: (params?.query === true ? true : this.defaultAccess.query),
-			edit: (params?.edit === true ? true : this.defaultAccess.edit),
-			delete: (params?.delete === true ? true : this.defaultAccess.delete),
-			create: (params?.create === true ? true : this.defaultAccess.create),
+			query: (typeof params?.query == 'boolean' ? params : this.defaultAccess).query,
+			edit: (typeof params?.edit == 'boolean' ? params : this.defaultAccess).edit,
+			delete: (typeof params?.delete == 'boolean' ? params : this.defaultAccess).delete,
+			create: (typeof params?.create == 'boolean' ? params : this.defaultAccess).create,
 		};
 		client.trace(`Request handler for [${client.path}] (Q: ${access.query} | E: ${access.edit} | D: ${access.delete} | C: ${access.create})`);
 
-		/* check if a game is being manipulated */
+		/* check if a game is being manipulated (entire endpoint is owned) */
 		if (client.isInsideOf(Endpoints.game)) {
 			const name = decodeURIComponent(mws.childPath(Endpoints.game, client.path).substring(1));
 			return this.modifyGame(client, access, name);
 		}
 
-		/* check if a websocket is created */
+		/* check if a websocket is created (entire endpoint is owned) */
 		if (client.isInsideOf(Endpoints.sockets)) {
 			const name = decodeURIComponent(mws.childPath(Endpoints.sockets, client.path).substring(1));
 			if (!name.match(GAME_NAME_REGEX) || name.length > GAME_NAME_MAX_LENGTH)
@@ -809,7 +835,7 @@ export class Crossword extends mws.ModuleHandler {
 			return this.queryGames(client, access);
 
 		/* check if its one of the primary endpoints and build them dynamically */
-		if (client.path == Endpoints.list)
+		if (client.path == Endpoints.lobby)
 			return this.buildMainPage(client, access);
 		if (client.path == Endpoints.play)
 			return this.buildPlayPage(client, access);
