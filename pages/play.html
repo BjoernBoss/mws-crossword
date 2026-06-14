@@ -60,6 +60,7 @@
 		name: '',
 		sock: null,
 		dirty: false,
+		ackStamp: 0,
 		grid: null,
 		players: {},
 		usedsHues: [],
@@ -121,8 +122,7 @@
 		/* setup the focus-host */
 		_state.focus = new GridFocus(_state.view, function () {
 			RenderGrid(_state.grid, _state.getAuthorHue);
-			_state.dirty = true;
-			_state.pushDirty();
+			_state.pushDirty(true);
 		}, function (horizontal) {
 			document.getElementById(horizontal ? 'horizontal' : 'vertical').classList.add('toggled');
 			document.getElementById(horizontal ? 'vertical' : 'horizontal').classList.remove('toggled');
@@ -132,6 +132,7 @@
 			else
 				document.getElementById('guess').classList.add('toggled');
 		});
+		_state.focus.setDirtyStamp(_state.ackStamp);
 
 		/* add the toggle callbacks for horizontal/vertical and guess */
 		document.getElementById('horizontal').onmousedown = function (e) {
@@ -282,19 +283,10 @@
 	}
 	_state.updateGrid = function (data) {
 		const content = document.getElementById('content');
+		let loaded = false;
 
-		/* check if its a delta update, which will be ignored for invalid measurements */
-		if (data.delta) {
-			if (_state.grid == null || _state.grid.width != data.width || _state.grid.height != data.height)
-				return;
-
-			/* update the grid data (and check if it still consideres the game dirty) */
-			if (ApplyGridDelta(_state.grid, data, _state.getAuthorHue)) {
-				_state.dirty = true;
-				_state.pushDirty();
-			}
-		}
-		else {
+		_state.dirty = false;
+		if (!data.delta) {
 			/* check if the grid should be unloaded */
 			if (_state.grid != null && (_state.grid.width != data.width || _state.grid.height != data.height)) {
 				_state.grid = null;
@@ -303,15 +295,19 @@
 			}
 
 			/* check if the initial grid is being shown */
-			if (_state.grid == null)
+			if (_state.grid == null) {
 				_state.grid = LoadGrid(data, content, _state.focus, _state.getAuthorHue);
-
-			/* update the grid data (and check if it still consideres the game dirty) */
-			else if (ApplyGridUpdate(_state.grid, data, _state.getAuthorHue)) {
-				_state.dirty = true;
-				_state.pushDirty();
+				loaded = true;
 			}
 		}
+
+		/* ignore invalid measurements for deltas */
+		else if (_state.grid == null || _state.grid.width != data.width || _state.grid.height != data.height)
+			return;
+
+		/* update the grid data (and check if it still consideres the game dirty) */
+		if (!loaded && ApplyGridUpdate(_state.grid, data, _state.getAuthorHue, data.delta))
+			_state.pushDirty(true);
 
 		/* update the view and focus */
 		_state.view.update(_state.grid);
@@ -337,6 +333,12 @@
 			return;
 		}
 
+		/* check if its an ack and mark the given cells as processed */
+		if (typeof data.ack == 'number') {
+			ApplyGridAck(_state.grid, data.ack);
+			return;
+		}
+
 		/* check if the server has failed (only notify once per failure) */
 		if (!data.failed)
 			_state.failedNotified = false;
@@ -350,15 +352,14 @@
 			_state.players[key].online = false;
 
 		/* update the player data */
-		for (const key of data.names) {
-			if (!(key in _state.players))
-				_state.players[key] = { hue: _state.nextColor(), online: false };
+		for (const name of data.online) {
+			if (!(name in _state.players))
+				_state.players[name] = { hue: _state.nextColor(), online: false };
+			_state.players[name].online = true;
 		}
-		for (const key of data.online) {
-			if (key in _state.players)
-				_state.players[key].online = true;
-			else
-				console.log(`Inconsistency detected between names and online names: ${key}`);
+		for (const cell of data.grid) {
+			if (cell.author != '' && !(cell.author in _state.players))
+				_state.players[cell.author] = { hue: _state.nextColor(), online: false };
 		}
 		_state.updatePlayers();
 
@@ -368,21 +369,23 @@
 	_state.handleConnected = function () {
 		if (_state.name != '')
 			_state.sock.send((send) => send({ cmd: 'name', name: _state.name }));
-		_state.pushDirty();
+		_state.pushDirty(false);
 	}
-	_state.pushDirty = function () {
-		if (!_state.dirty)
+	_state.pushDirty = function (dirty) {
+		if (dirty)
+			_state.dirty = true;
+		else if (!_state.dirty)
 			return;
-		_state.dirty = false;
 
 		/* check if the grid can be sent */
 		if (_state.grid == null)
 			return;
 
-		/* build the delta-state to be sent */
-		let out = DeltaSerializeGrid(_state.grid);
+		/* build the delta-state to be sent and advance the ack stamp */
+		const id = _state.ackStamp, data = DeltaSerializeGrid(_state.grid);
+		_state.focus.setDirtyStamp(++_state.ackStamp);
 
 		/* send the data to the server */
-		_state.sock.send((send) => send({ cmd: 'delta', data: out }));
+		_state.sock.send((send) => send({ cmd: 'update', data, id }));
 	}
 </script>

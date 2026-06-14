@@ -27,7 +27,6 @@ interface GameBoard {
 interface GameState extends GameBoard {
 	failed: boolean;
 	delta: boolean;
-	names: string[];
 	online: string[];
 }
 enum GameLoadState {
@@ -37,14 +36,14 @@ enum GameLoadState {
 	corrupted
 }
 
-function ParseAndValidateCells(grid: unknown, size: number, shallowGrid: boolean, deltaGrid: boolean, refCells: GridCell[] | null): [GridCell[], number[]] {
-	/* validate the root grid format */
-	if (!Array.isArray(grid) || (!deltaGrid && grid.length != size))
+function ParseAndValidateCells(grid: unknown, size: number, shallowGrid: boolean, refCells: GridCell[] | null): [GridCell[], number[]] {
+	/* validate the root grid format (for deltas, the dimensions dont match) */
+	if (!Array.isArray(grid) || (refCells == null && grid.length != size))
 		throw new Error('Malformed Grid');
 	let out: GridCell[] = [], dirty: number[] = [];
 
 	/* check if its a delta grid, in which case the raw cells first need to be loaded */
-	if (deltaGrid && refCells != null)
+	if (refCells != null)
 		out = refCells.slice();
 
 	/* validate the separate cells */
@@ -62,13 +61,9 @@ function ParseAndValidateCells(grid: unknown, size: number, shallowGrid: boolean
 		/* check if its a delta-grid (with coordinates) */
 		let ref: GridCell | null = null;
 		if (refCells != null) {
-			if (deltaGrid) {
-				if (typeof cell.index != 'number' || Math.floor(cell.index) != cell.index || cell.index < 0 || cell.index >= refCells.length)
-					throw new Error('Malformed Grid');
-				ref = refCells[cell.index];
-			}
-			else
-				ref = refCells[i];
+			if (typeof cell.index != 'number' || Math.floor(cell.index) != cell.index || cell.index < 0 || cell.index >= refCells.length)
+				throw new Error('Malformed Grid');
+			ref = refCells[cell.index];
 		}
 
 		/* validate the data-types */
@@ -78,11 +73,8 @@ function ParseAndValidateCells(grid: unknown, size: number, shallowGrid: boolean
 			throw new Error('Malformed Grid');
 
 		/* check if the grid is not newer than the current grid */
-		if (ref != null && cell.time <= ref.time) {
-			if (!deltaGrid)
-				out.push(ref);
+		if (ref != null && cell.time <= ref.time)
 			continue;
-		}
 
 		/* setup the sanitized data */
 		let char: string = cell.char.slice(0, 1).toUpperCase();
@@ -96,18 +88,15 @@ function ParseAndValidateCells(grid: unknown, size: number, shallowGrid: boolean
 			author = ref.author;
 
 		/* check if the data actually have changed */
-		if (ref != null && char == ref.char && certain == ref.certain && author == ref.author) {
-			if (!deltaGrid)
-				out.push(ref);
+		if (ref != null && char == ref.char && certain == ref.certain && author == ref.author)
 			continue;
-		}
 
-		/* push the new updated cell */
+		/* update the cell and mark it as dirty (dirty only relevant for delta-updates) */
 		const updated = { solid: (ref == null ? cell.solid : ref.solid), char: char, certain: certain, author: author, time: cell.time };
-		if (deltaGrid)
+		if (refCells != null)
 			out[cell.index] = updated, dirty.push(cell.index);
 		else
-			out.push(updated), dirty.push(i);
+			out.push(updated);
 	}
 	return [out, dirty];
 }
@@ -129,7 +118,7 @@ function ParseAndValidateGameBoard(data: string, shallowGrid: boolean): GameBoar
 		throw new Error('Malformed Dimensions');
 
 	/* validate and parse the list of cells and return the game structure */
-	const [cells, _] = ParseAndValidateCells(obj.grid, width * height, shallowGrid, false, null);
+	const [cells, _] = ParseAndValidateCells(obj.grid, width * height, shallowGrid, null);
 	return { width, height, grid: cells };
 }
 
@@ -186,14 +175,13 @@ class ActiveGame {
 	}
 	private buildOutput(dirty: number[] | null): GameState {
 		if (this.data == null)
-			return { failed: true, delta: false, grid: [], width: 0, height: 0, names: [], online: [] };
+			return { failed: true, delta: false, grid: [], width: 0, height: 0, online: [] };
 		let out: GameState = {
 			failed: this.write.failed,
 			delta: (dirty != null),
 			grid: (dirty == null ? this.data.grid : []),
 			width: this.data.width,
 			height: this.data.height,
-			names: [],
 			online: []
 		};
 
@@ -207,27 +195,12 @@ class ActiveGame {
 
 		/* collect the online names */
 		let online: Set<string> = new Set<string>();
-		let names: Set<string> = new Set<string>();
 		for (const child of this.ws) {
 			const name = child[1];
-			if (name == '') continue;
-
-			/* add the name to the list of objects */
-			if (!online.has(name)) {
-				online.add(name);
-				out.online.push(name);
-			}
-			if (!names.has(name)) {
-				names.add(name);
-				out.names.push(name);
-			}
-		}
-
-		/* collect all already used names in the grid */
-		for (let i = 0; i < this.data.grid.length; ++i) {
-			if (names.has(this.data.grid[i].author) || this.data.grid[i].author == '') continue;
-			names.add(this.data.grid[i].author);
-			out.names.push(this.data.grid[i].author);
+			if (name == '' || online.has(name))
+				continue;
+			online.add(name);
+			out.online.push(name);
 		}
 		return out;
 	}
@@ -316,14 +289,14 @@ class ActiveGame {
 	public waitOnGame(): Promise<GameLoadState> {
 		return this.loading;
 	}
-	public updateGrid(client: mws.ClientSocket, grid: any, delta: boolean): void {
-		/* ensure that a grid exists (ignore any errors) */
+	public updateGrid(client: mws.ClientSocket, grid: any): void {
+		/* ensure that a grid exists (silently ignore any errors) */
 		if (this.data == null) {
 			client.warning(`Discarding grid update for corrupted load [${this.filePath}]`);
 			return;
 		}
 
-		/* ensure that the player has a name (ignore any errors) */
+		/* ensure that the player has a name */
 		const name = this.ws.get(client)!;
 		if (name == '') {
 			client.warning(`Discarding grid update of unnamed player [${this.filePath}]`);
@@ -332,14 +305,14 @@ class ActiveGame {
 
 		let merged: GridCell[] | null = null, dirty: number[] = [];
 		try {
-			[merged, dirty] = ParseAndValidateCells(grid, this.data.grid.length, false, delta, this.data.grid);
+			[merged, dirty] = ParseAndValidateCells(grid, this.data.grid.length, false, this.data.grid);
 		}
 		catch (_) {
 			client.error(`Discarding invalid grid update [${this.filePath}] by [${name}]`);
 			return;
 		}
 
-		/* check if the data are not dirty (ignore any errors) */
+		/* check if the data are not dirty */
 		if (dirty.length == 0) {
 			client.trace(`Discarding empty grid update of [${this.filePath}] by [${name}]`);
 			return;
@@ -658,6 +631,10 @@ export class Crossword extends mws.ModuleHandler {
 			try {
 				const parsed: any = JSON.parse(data.toString('utf-8'));
 
+				/* always ack update messages to prevent clients from re-sending frames */
+				if (parsed.cmd == 'update' && typeof parsed.id == 'number')
+					client.send(JSON.stringify({ ack: parsed.id }));
+
 				/* dispatch the client request accordingly */
 				if (!params.edit)
 					client.error(`Received not allowed command [${parsed.cmd}]`);
@@ -665,11 +642,11 @@ export class Crossword extends mws.ModuleHandler {
 					client.trace(`Received for socket: ${parsed.cmd} (${parsed.name})`);
 					game.updateName(client, parsed.name);
 				}
-				else if (parsed.cmd != 'update' && parsed.cmd != 'delta')
+				else if (parsed.cmd != 'update')
 					client.warning(`Received unknown command [${parsed.cmd}]`);
 				else if (gameLoaded) {
-					client.trace(`Received grid ${parsed.cmd}`);
-					game.updateGrid(client, parsed.data, (parsed.cmd == 'delta'));
+					client.trace(`Received grid update [id: ${parsed.id}]`);
+					game.updateGrid(client, parsed.data);
 				}
 				else
 					client.warning('Discarding update of not yet loaded game');

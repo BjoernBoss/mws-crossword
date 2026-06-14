@@ -67,20 +67,21 @@ The `Endpoints` export provides the path constants used by the module. All paths
 
 ## WebSocket Protocol
 
-Clients connect to `/ws/{name}` to join a game session. The server sends the full game state as a JSON object on connection and after every change. Clients send JSON commands to interact with the game.
+Clients connect to `/ws/{name}` to join a game session. The server sends the full game state on connection and delta updates after every change. Clients send JSON commands to interact with the game.
 
 ### Client Commands
 
 | Command | Fields | Description |
 |---|---|---|
 | `name` | `{ cmd: 'name', name: string }` | Set the player name (required before grid updates are accepted) |
-| `update` | `{ cmd: 'update', data: GridCell[] }` | Push a grid update; cells use timestamp-based conflict resolution |
+| `update` | `{ cmd: 'update', data: GridCell[], id: number }` | Push a delta grid update; each cell includes an `index` field identifying its position in the linearized grid (`x + y * width`); `id` is a monotonically increasing ack-stamp |
 
 ### Server Messages
 
-The server sends either a `GameState` object or a string error identifier:
+The server sends one of three message types: a `GameState` object, an `Ack` object, or a string error identifier.
 
-- **`GameState`** object: `{ failed, width, height, grid, names, online }` where `failed` indicates a write-back error, `names` lists all known players (online and from grid history), and `online` lists currently connected players.
+- **`GameState`** object: `{ failed, delta, width, height, grid, online }` where `failed` indicates a write-back error, `delta` indicates whether `grid` contains a delta (only changed cells with `index` fields) or the full grid, and `online` lists currently connected player names.
+- **`Ack`** object: `{ ack: number }` confirming the server received a client `update` message with the given `id`.
 - **`"unknown-game"`**: the requested game does not exist.
 - **`"corrupted-game"`**: the game file could not be parsed.
 - **`"dropped-game"`**: the game was deleted while connected.
@@ -88,9 +89,15 @@ The server sends either a `GameState` object or a string error identifier:
 
 After an error identifier is sent, the server closes the WebSocket.
 
+### Delta Encoding
+
+To minimize bandwidth, grid updates use delta encoding. Instead of transmitting the full grid on every change, only the modified cells are sent — both from client to server and from server to clients. Each cell in a delta carries an `index` field indicating its position in the linearized grid array (`x + y * width`).
+
+The server sends the full grid state (`delta: false`) on initial connection and uses delta messages (`delta: true`) for subsequent broadcasts. Non-grid changes (player joins, name changes, disconnects) are broadcast as empty deltas that only update the `online` list.
+
 ### Conflict Resolution
 
-Each cell carries a timestamp. When a client pushes an update, only cells with a newer timestamp than the server's current state are applied. Cells with equal or older timestamps are silently discarded. This ensures that concurrent edits from multiple players converge without explicit locking.
+Each cell carries a timestamp. When a client pushes an update, only cells with a strictly newer timestamp than the server's current state are applied. Cells with equal or older timestamps are silently discarded. This ensures that concurrent edits from multiple players converge without explicit locking.
 
 ## Game Rules
 
