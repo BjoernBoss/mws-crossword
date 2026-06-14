@@ -106,9 +106,11 @@ function LoadGrid(data, html, focus, authorHue) {
 			grid.mesh[x][y] = {
 				solid: cell.solid,
 				html: null,
+				dirty: false,
 				char: cell.char,
 				certain: cell.certain,
-				author: cell.author
+				author: cell.author,
+				time: cell.time
 			};
 		}
 	}
@@ -120,6 +122,21 @@ function LoadGrid(data, html, focus, authorHue) {
 	RenderGrid(grid, authorHue);
 	return grid;
 }
+function ApplyCellUpdate(cell, next) {
+	/* check if the current cell is still newer, in which case it will be kept (the apply
+	*	might come later; but only mark it as dirty, if the update has not yet been sent) */
+	if (next.time < cell.time)
+		return cell.dirty;
+
+	/* copy the state over */
+	cell.solid = next.solid;
+	cell.char = next.char;
+	cell.author = next.author;
+	cell.certain = next.certain;
+	cell.time = next.time;
+	cell.dirty = false;
+	return false;
+}
 function ApplyGridUpdate(grid, data, authorHue) {
 	let dirty = false;
 
@@ -129,19 +146,24 @@ function ApplyGridUpdate(grid, data, authorHue) {
 			const next = data.grid[x + y * grid.width];
 			const cell = grid.mesh[x][y];
 
-			/* check if the current cell-state is newer */
-			if (next.time < cell.time) {
+			if (ApplyCellUpdate(cell, next))
 				dirty = true;
-				continue;
-			}
-
-			/* copy the state over */
-			cell.solid = next.solid;
-			cell.char = next.char;
-			cell.author = next.author;
-			cell.certain = next.certain;
-			cell.time = next.time;
 		}
+	}
+
+	/* render the updated grid */
+	RenderGrid(grid, authorHue);
+	return dirty;
+}
+function ApplyGridDelta(grid, data, authorHue) {
+	let dirty = false;
+
+	/* iterate over the cells and update them */
+	for (let i = 0; i < data.grid.length; ++i) {
+		const next = data.grid[i];
+		const cell = grid.mesh[next.index % grid.width][Math.floor(next.index / grid.width)];
+		if (ApplyCellUpdate(cell, next))
+			dirty = true;
 	}
 
 	/* render the updated grid */
@@ -216,11 +238,36 @@ function FullSerializeGrid(grid) {
 	/* serialize the data out */
 	for (let y = 0; y < grid.height; ++y) {
 		for (let x = 0; x < grid.width; ++x) {
+			const cell = grid.mesh[x][y];
+			cell.dirty = false;
+
 			out.push({
-				char: grid.mesh[x][y].char,
-				certain: grid.mesh[x][y].certain,
-				author: grid.mesh[x][y].author,
-				time: grid.mesh[x][y].time
+				char: cell.char,
+				certain: cell.certain,
+				author: cell.author,
+				time: cell.time
+			});
+		}
+	}
+	return out;
+}
+function DeltaSerializeGrid(grid) {
+	let out = [];
+
+	/* serialize the dirty data out */
+	for (let y = 0; y < grid.height; ++y) {
+		for (let x = 0; x < grid.width; ++x) {
+			const cell = grid.mesh[x][y];
+			if (!cell.dirty)
+				continue;
+			cell.dirty = false;
+
+			out.push({
+				char: cell.char,
+				certain: cell.certain,
+				author: cell.author,
+				time: cell.time,
+				index: x + y * grid.width
 			});
 		}
 	}
@@ -533,6 +580,7 @@ class GridFocus {
 		else if (cell.certain == certain)
 			return;
 		cell.certain = certain;
+		cell.dirty = true;
 		++cell.time;
 
 		/* notify about the changed grid */

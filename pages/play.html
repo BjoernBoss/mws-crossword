@@ -283,21 +283,34 @@
 	_state.updateGrid = function (data) {
 		const content = document.getElementById('content');
 
-		/* check if the grid should be unloaded */
-		if (_state.grid != null && (_state.grid.width != data.width || _state.grid.height != data.height)) {
-			_state.grid = null;
-			while (content.children.length > 0)
-				content.lastChild.remove();
+		/* check if its a delta update, which will be ignored for invalid measurements */
+		if (data.delta) {
+			if (_state.grid == null || _state.grid.width != data.width || _state.grid.height != data.height)
+				return;
+
+			/* update the grid data (and check if it still consideres the game dirty) */
+			if (ApplyGridDelta(_state.grid, data, _state.getAuthorHue)) {
+				_state.dirty = true;
+				_state.pushDirty();
+			}
 		}
+		else {
+			/* check if the grid should be unloaded */
+			if (_state.grid != null && (_state.grid.width != data.width || _state.grid.height != data.height)) {
+				_state.grid = null;
+				while (content.children.length > 0)
+					content.lastChild.remove();
+			}
 
-		/* check if the initial grid is being shown */
-		if (_state.grid == null)
-			_state.grid = LoadGrid(data, content, _state.focus, _state.getAuthorHue);
+			/* check if the initial grid is being shown */
+			if (_state.grid == null)
+				_state.grid = LoadGrid(data, content, _state.focus, _state.getAuthorHue);
 
-		/* update the grid data (and check if it still consideres the game dirty) */
-		else if (ApplyGridUpdate(_state.grid, data, _state.getAuthorHue)) {
-			_state.dirty = true;
-			_state.pushDirty();
+			/* update the grid data (and check if it still consideres the game dirty) */
+			else if (ApplyGridUpdate(_state.grid, data, _state.getAuthorHue)) {
+				_state.dirty = true;
+				_state.pushDirty();
+			}
 		}
 
 		/* update the view and focus */
@@ -366,10 +379,10 @@
 		if (_state.grid == null)
 			return;
 
-		/* build the game-state to be sent */
-		let out = FullSerializeGrid(_state.grid);
+		/* build the delta-state to be sent */
+		let out = DeltaSerializeGrid(_state.grid);
 
 		/* send the data to the server */
-		_state.sock.send((send) => send({ cmd: 'update', data: out }));
+		_state.sock.send((send) => send({ cmd: 'delta', data: out }));
 	}
 </script>
