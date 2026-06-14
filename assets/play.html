@@ -53,8 +53,6 @@
 
 <!-- primary app logic -->
 <script>
-	const COOKIE_NAME_LIFETIME_MS = 24 * 60 * 60 * 1000;
-
 	let _state = {
 		game: '',
 		name: '',
@@ -73,7 +71,9 @@
 
 	window.onload = function () {
 		_state.manifest.edit = __LOAD_CONFIG__.manifest?.edit ?? false;
-		_state.manifest.cookie = __LOAD_CONFIG__.manifest?.cookie ?? '';
+		_state.manifest.cookie = {};
+		_state.manifest.cookie.name = __LOAD_CONFIG__.manifest?.cookie?.name ?? '';
+		_state.manifest.cookie.lifetime = __LOAD_CONFIG__.manifest?.cookie?.lifetime ?? 0;
 		_state.manifest.sockets = __LOAD_CONFIG__.manifest?.sockets ?? '/bad_manifest';
 
 		/* ensure phones handle the visibility of the keyboard properly */
@@ -94,8 +94,8 @@
 		}
 
 		/* initialize the last name from the cookies */
-		if (_state.manifest.cookie != '') {
-			let lastName = document.cookie.split('; ').find((v) => v.startsWith(`${_state.manifest.cookie}=`))?.split('=')[1];
+		if (_state.manifest.cookie.name != '') {
+			let lastName = document.cookie.split('; ').find((v) => v.startsWith(`${_state.manifest.cookie.name}=`))?.split('=')[1];
 			if (lastName != null)
 				document.getElementById('name').value = lastName;
 		}
@@ -172,10 +172,10 @@
 				return;
 			}
 
-			/* update the name and write it to the cookie (lifetime = 24hrs) */
+			/* update the name and write it to the cookie */
 			_state.name = name;
-			if (_state.manifest.cookie != '')
-				document.cookie = `${_state.manifest.cookie}=${_state.name}; expires=${new Date(Date.now() + COOKIE_NAME_LIFETIME_MS).toUTCString()};`;
+			if (_state.manifest.cookie.name != '' && _state.manifest.cookie.lifetime > 0)
+				document.cookie = `${_state.manifest.cookie.name}=${_state.name}; expires=${new Date(Date.now() + _state.manifest.cookie.lifetime).toUTCString()};`;
 
 			/* notify the socket about the available name */
 			if (_state.sock.connected())

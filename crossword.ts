@@ -10,6 +10,7 @@ const GRID_DIMENSIONS = { min: 1, max: 64 };
 const MAX_FILE_SIZE = 100_000;
 const WRITE_BACK_DELAY_MS = 60_000;
 const NAME_COOKIE_NAME = 'crossword-last-name';
+const NAME_COOKIE_LIFETIME_MS = 24 * 60 * 60 * 1000;
 
 interface GridCell {
 	solid: boolean;
@@ -437,29 +438,29 @@ export interface Access {
 }
 
 /**
- *	Endpoints used by the crossword.
- *	This mapping can be used to translate components of the crossword to different paths in the URL space.
+ *	Endpoints used by the module.
+ *	This mapping can be used to translate components of the module to different paths in the URL space.
  */
 export const Endpoints = {
-	/** directory containting static assets */
+	/** directory containting static assets (sparsely used) */
 	static: '/static',
 
-	/** endpoint for viewing the game lobby */
+	/** endpoint for viewing the game lobby (requires Access.query) */
 	lobby: '/',
 
 	/** endpoint for playing a given game */
 	play: '/play',
 
-	/** endpoint for creating a game */
+	/** endpoint for creating a game (requires Access.create) */
 	editor: '/editor',
 
-	/** directory for web-sockets (fully owned, auto-responds with 404) */
+	/** directory for web-sockets (fully owned, auto-responds with 404; conditionally requires Access.edit) */
 	sockets: '/ws',
 
-	/** endpoint to query the registered games */
+	/** endpoint to query the registered games (requires Access.query) */
 	games: '/games',
 
-	/** directory to manage a game (fully owned, auto-responds with 404) */
+	/** directory to manage a game (fully owned, auto-responds with 404; requires Access.create/Access.delete) */
 	game: '/game'
 }
 
@@ -468,17 +469,20 @@ export const Endpoints = {
  */
 export class Crossword extends mws.ModuleHandler {
 	private fileStatic: (path: string) => string;
-	private filePages: (path: string) => string;
+	private fileAssets: (path: string) => string;
 	private fileGames: (path: string) => string;
 	private gameStates: Record<string, ActiveGame>;
 	private defaultAccess: BurntAccess;
 
-	/** [dataPath] describes the directory, which contains all of the games; [access] describes the default access mask */
+	/**
+	 *	[dataPath] describes the directory, which contains all of the games
+	 *	[access] describes the default access mask
+	 */
 	constructor(dataPath: string, access?: Access) {
 		super('crossword');
 
 		this.fileStatic = mws.createPathSelf(import.meta.url, '../static');
-		this.filePages = mws.createPathSelf(import.meta.url, '../pages');
+		this.fileAssets = mws.createPathSelf(import.meta.url, '../assets');
 		this.fileGames = mws.createPathLocation(dataPath);
 		this.gameStates = {};
 		this.defaultAccess = {
@@ -489,14 +493,14 @@ export class Crossword extends mws.ModuleHandler {
 		};
 	}
 
-	private async modifyGame(client: mws.ClientRequest, params: BurntAccess, name: string): Promise<void> {
+	private async modifyGame(client: mws.ClientRequest, access: BurntAccess, name: string): Promise<void> {
 		/* validate the method */
 		const method = client.requireMethod(['POST', 'DELETE']);
 		if (method == null)
 			return;
 
 		/* check if the client is allowed to create/delete */
-		if (!(method == 'POST' ? params.create : params.delete))
+		if (!(method == 'POST' ? access.create : access.delete))
 			return client.respondForbidden(`Not allowed to ${method == 'POST' ? 'create' : 'delete'} crosswords`);
 
 		/* extract the name (respond with 400/404 on error, as this is a totally owned endpoint) */
@@ -572,9 +576,9 @@ export class Crossword extends mws.ModuleHandler {
 			client.respondInternalError(`Error while writing the game [${filePath}]: ${err.message}`);
 		}
 	}
-	private async queryGames(client: mws.ClientRequest, params: BurntAccess): Promise<void> {
+	private async queryGames(client: mws.ClientRequest, access: BurntAccess): Promise<void> {
 		/* check if the client is allowed to query */
-		if (!params.query)
+		if (!access.query)
 			return client.respondForbidden('Not allowed to query crosswords');
 
 		/* read the current list of game files */
@@ -602,7 +606,7 @@ export class Crossword extends mws.ModuleHandler {
 		/* return them to the request */
 		client.respond(JSON.stringify(out), { media: mws.Media.Json });
 	}
-	private async acceptWebSocket(client: mws.ClientSocket, name: string, params: BurntAccess): Promise<void> {
+	private async acceptWebSocket(client: mws.ClientSocket, name: string, access: BurntAccess): Promise<void> {
 		client.trace(`Handling WebSocket to: [${name}]`);
 		const filePath = this.fileGames(`${name}.json`);
 
@@ -636,7 +640,7 @@ export class Crossword extends mws.ModuleHandler {
 					client.send(JSON.stringify({ ack: parsed.id }));
 
 				/* dispatch the client request accordingly */
-				if (!params.edit)
+				if (!access.edit)
 					client.error(`Received not allowed command [${parsed.cmd}]`);
 				else if (parsed.cmd == 'name' && typeof parsed.name == 'string') {
 					client.trace(`Received for socket: ${parsed.cmd} (${parsed.name})`);
@@ -676,9 +680,9 @@ export class Crossword extends mws.ModuleHandler {
 		game.notify(null, client);
 	}
 	private async fetchBody(client: mws.ClientRequest, path: string): Promise<string | null> {
-		const fullPath = this.filePages(path);
+		const fullPath = this.fileAssets(path);
 
-		/* look for the file (will never be an immutable path; consider it stable) */
+		/* look for the file (will never be an immutable path) */
 		try {
 			const data: Buffer | null = await this.cache.read(fullPath);
 			if (data == null) {
@@ -695,9 +699,9 @@ export class Crossword extends mws.ModuleHandler {
 	private staticPath(client: mws.ClientRequest, path: string): string {
 		return client.makePath(this.cache.immutable(this.name, mws.joinSanitized(Endpoints.static, path)));
 	}
-	private async buildMainPage(client: mws.ClientRequest, params: BurntAccess): Promise<void> {
+	private async buildMainPage(client: mws.ClientRequest, access: BurntAccess): Promise<void> {
 		/* check if the client is allowed to query */
-		if (!params.query)
+		if (!access.query)
 			return client.respondForbidden('Not allowed to query crosswords');
 
 		/* read the body */
@@ -707,8 +711,8 @@ export class Crossword extends mws.ModuleHandler {
 
 		const loadConfig: string = JSON.stringify({
 			manifest: {
-				create: params.create,
-				delete: params.delete,
+				create: access.create,
+				delete: access.delete,
 				games: client.makePath(Endpoints.games),
 				editor: client.makePath(Endpoints.editor),
 				play: client.makePath(Endpoints.play),
@@ -731,7 +735,7 @@ export class Crossword extends mws.ModuleHandler {
 		});
 		await client.respondHtml(page, { status: mws.Status.Ok });
 	}
-	private async buildPlayPage(client: mws.ClientRequest, params: BurntAccess): Promise<void> {
+	private async buildPlayPage(client: mws.ClientRequest, access: BurntAccess): Promise<void> {
 		const toPath = (base: string, path: string) => client.makePath(this.cache.immutable(this.name, mws.joinSanitized(base, path)));
 
 		/* read the body */
@@ -741,8 +745,11 @@ export class Crossword extends mws.ModuleHandler {
 
 		const loadConfig: string = JSON.stringify({
 			manifest: {
-				edit: params.edit,
-				cookie: NAME_COOKIE_NAME,
+				edit: access.edit,
+				cookie: {
+					name: NAME_COOKIE_NAME,
+					timeout: NAME_COOKIE_LIFETIME_MS
+				},
 				sockets: client.makePath(Endpoints.sockets)
 			}
 		});
@@ -765,11 +772,11 @@ export class Crossword extends mws.ModuleHandler {
 		});
 		await client.respondHtml(page, { status: mws.Status.Ok });
 	}
-	private async buildEditorPage(client: mws.ClientRequest, params: BurntAccess): Promise<void> {
+	private async buildEditorPage(client: mws.ClientRequest, access: BurntAccess): Promise<void> {
 		const toPath = (base: string, path: string) => client.makePath(this.cache.immutable(this.name, mws.joinSanitized(base, path)));
 
 		/* check if the client is allowed to edit */
-		if (!params.create)
+		if (!access.create)
 			return client.respondForbidden('Not allowed to create crosswords');
 
 		/* read the body */
@@ -806,7 +813,7 @@ export class Crossword extends mws.ModuleHandler {
 			query: (typeof params?.query == 'boolean' ? params : this.defaultAccess).query,
 			edit: (typeof params?.edit == 'boolean' ? params : this.defaultAccess).edit,
 			delete: (typeof params?.delete == 'boolean' ? params : this.defaultAccess).delete,
-			create: (typeof params?.create == 'boolean' ? params : this.defaultAccess).create,
+			create: (typeof params?.create == 'boolean' ? params : this.defaultAccess).create
 		};
 		client.trace(`Request handler for [${client.path}] (Q: ${access.query} | E: ${access.edit} | D: ${access.delete} | C: ${access.create})`);
 

@@ -6,7 +6,7 @@ A collaborative crossword module for [`@bjoernboss/mws`](https://github.com/Bjoe
 
 Players can create, edit, and solve crossword puzzles together in real time using WebSockets.
 
-Game state is stored as JSON files in a configurable data directory and persists across server restarts. All active sessions are managed by the `Crossword` module; sharing it across multiple listeners gives each listener access to the same game state and player base.
+Game state is stored as JSON files in a configurable data directory and persists across server restarts. All active sessions are managed by the `Crossword` module.
 
 ## Installation
 
@@ -36,6 +36,8 @@ server.listen(dispatch({ '/crossword': crossword }), { port: 8080 });
 ```
 
 The module serves its own pages, static assets, and WebSocket endpoints from its mount point. Navigate to `http://localhost:8080/crossword/` to open the lobby.
+
+Important: The module caches the loaded games in memory. The same data directory should therefore not be used by multiple `Crossword` modules simultaneously.
 
 ## Access Control
 
