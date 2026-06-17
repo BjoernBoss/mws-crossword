@@ -13,15 +13,16 @@ let _state = {
 	focus: null,
 	configured: false,
 	failedNotified: false,
-	manifest: {}
+	params: {}
 };
 
 window.onload = function () {
-	_state.manifest.edit = __LOAD_CONFIG__.manifest?.edit ?? false;
-	_state.manifest.cookie = {};
-	_state.manifest.cookie.name = __LOAD_CONFIG__.manifest?.cookie?.name ?? '';
-	_state.manifest.cookie.lifetime = __LOAD_CONFIG__.manifest?.cookie?.lifetime ?? 0;
-	_state.manifest.sockets = __LOAD_CONFIG__.manifest?.sockets ?? '/bad_manifest';
+	_state.params.edit = __LOAD_PARAMS__?.edit ?? false;
+	_state.params.sockets = __LOAD_PARAMS__?.sockets ?? '/bad_path';
+	_state.params.cookie = {
+		name: __LOAD_PARAMS__?.cookie?.name ?? '',
+		lifetime: __LOAD_PARAMS__?.cookie?.lifetime ?? 0
+	};
 
 	/* ensure phones handle the visibility of the keyboard properly */
 	if (window.visualViewport) {
@@ -41,8 +42,8 @@ window.onload = function () {
 	}
 
 	/* initialize the last name from the cookies */
-	if (_state.manifest.cookie.name != '') {
-		let lastName = document.cookie.split('; ').find((v) => v.startsWith(`${_state.manifest.cookie.name}=`))?.split('=')[1];
+	if (_state.params.cookie.name != '') {
+		let lastName = document.cookie.split('; ').find((v) => v.startsWith(`${_state.params.cookie.name}=`))?.split('=')[1];
 		if (lastName != null)
 			document.getElementById('name').value = lastName;
 	}
@@ -57,7 +58,7 @@ window.onload = function () {
 		document.getElementById('caption').innerText = 'Unknown Crossword!';
 
 	/* setup the socket and register all corresponding callbacks */
-	_state.sock = new SyncSocket(`${_state.manifest.sockets}/${_state.game}`);
+	_state.sock = new SyncSocket(`${_state.params.sockets}/${_state.game}`);
 	_state.sock.onfailed = (msg) => PushNotification(msg, true, () => _state.sock.retry());
 	_state.sock.onreceived = (data) => _state.handleData(data);
 	_state.sock.onconnected = () => _state.handleConnected();
@@ -101,8 +102,18 @@ window.onload = function () {
 		document.getElementById('guess').classList.add('toggled');
 
 	/* check if the player is not allowed to edit the game */
-	if (!_state.manifest.edit)
+	if (!_state.params.edit)
 		_state.enter(true);
+
+	/* focus the name element and register the enter-to-enter listener */
+	else {
+		const name = document.getElementById('name');
+		name.onkeydown = function (e) {
+			if (e.key == 'Enter')
+				_state.enter(false);
+		};
+		name.focus();
+	}
 }
 
 _state.enter = function (passive) {
@@ -121,8 +132,8 @@ _state.enter = function (passive) {
 
 		/* update the name and write it to the cookie */
 		_state.name = name;
-		if (_state.manifest.cookie.name != '' && _state.manifest.cookie.lifetime > 0)
-			document.cookie = `${_state.manifest.cookie.name}=${_state.name}; expires=${new Date(Date.now() + _state.manifest.cookie.lifetime).toUTCString()};`;
+		if (_state.params.cookie.name != '' && _state.params.cookie.lifetime > 0)
+			document.cookie = `${_state.params.cookie.name}=${_state.name}; expires=${new Date(Date.now() + _state.params.cookie.lifetime).toUTCString()};`;
 
 		/* notify the socket about the available name */
 		if (_state.sock.connected())

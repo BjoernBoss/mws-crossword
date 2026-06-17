@@ -260,7 +260,7 @@
 	box-shadow: inset 0 0 3px #000000;
 }
 
-@media (hover: hover) {
+@media (hover: hover) and (pointer: fine) {
 	.button:not(.disabled):hover:not(:has(.button:hover)) {
 		background-color: #e0e0e0;
 	}

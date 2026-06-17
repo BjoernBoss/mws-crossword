@@ -1,20 +1,20 @@
 /* SPDX-License-Identifier: BSD-3-Clause */
 /* Copyright (c) 2026 Bjoern Boss Henrichsen */
-let _state = { removing: null, busy: false, manifest: {} };
+let _state = { removing: null, busy: false, params: {} };
 
 window.onload = function () {
-	_state.manifest.create = __LOAD_CONFIG__.manifest?.create ?? false;
-	_state.manifest.delete = __LOAD_CONFIG__.manifest?.delete ?? false;
-	_state.manifest.games = __LOAD_CONFIG__.manifest?.games ?? '/bad_manifest';
-	_state.manifest.editor = __LOAD_CONFIG__.manifest?.editor ?? '/bad_manifest';
-	_state.manifest.play = __LOAD_CONFIG__.manifest?.play ?? '/bad_manifest';
-	_state.manifest.game = __LOAD_CONFIG__.manifest?.game ?? '/bad_manifest';
+	_state.params.create = __LOAD_PARAMS__?.create ?? false;
+	_state.params.delete = __LOAD_PARAMS__?.delete ?? false;
+	_state.params.games = __LOAD_PARAMS__?.games ?? '/bad_path';
+	_state.params.editor = __LOAD_PARAMS__?.editor ?? '/bad_path';
+	_state.params.play = __LOAD_PARAMS__?.play ?? '/bad_path';
+	_state.params.game = __LOAD_PARAMS__?.game ?? '/bad_path';
 
 	/* check if creating of crosswords is allowed */
-	if (_state.manifest.create) {
+	if (_state.params.create) {
 		let entry = document.createElement('a');
 		entry.classList.add('button', 'menu-option');
-		entry.href = _state.manifest.editor;
+		entry.href = _state.params.editor;
 		document.getElementById('content').appendChild(entry);
 
 		let text = document.createElement('div');
@@ -47,7 +47,7 @@ window.onload = function () {
 }
 
 _state.loadList = function () {
-	fetch(_state.manifest.games)
+	fetch(_state.params.games)
 		.then(function (resp) {
 			if (resp.status != 200)
 				throw new Error(`Server responded with ${resp.status}`);
@@ -60,7 +60,7 @@ _state.loadList = function () {
 
 			/* clear the old list */
 			const content = document.getElementById('content');
-			while (content.children.length > (_state.manifest.create ? 1 : 0))
+			while (content.children.length > (_state.params.create ? 1 : 0))
 				content.lastChild.remove();
 
 			/* write the values out */
@@ -68,7 +68,7 @@ _state.loadList = function () {
 				/* add the next entry */
 				let entry = document.createElement('a');
 				entry.classList.add('button', 'menu-option');
-				entry.href = `${_state.manifest.play}?game=${encodeURIComponent(name)}`;
+				entry.href = `${_state.params.play}?game=${encodeURIComponent(name)}`;
 				content.appendChild(entry);
 
 				let text = document.createElement('div');
@@ -79,7 +79,7 @@ _state.loadList = function () {
 				text.innerText = name;
 
 				/* check if the crosswords can be deleted */
-				if (!_state.manifest.delete)
+				if (!_state.params.delete)
 					continue;
 				let hsep = document.createElement('div');
 				hsep.classList.add('splitter');
@@ -121,7 +121,7 @@ _state.doRemove = function () {
 	_state.busy = true;
 
 	/* try to remove the entry */
-	fetch(`${_state.manifest.game}/${_state.removing}`, { method: 'DELETE' })
+	fetch(`${_state.params.game}/${_state.removing}`, { method: 'DELETE' })
 		.then(function (resp) {
 			if (!resp.ok)
 				throw new Error(resp.statusText);

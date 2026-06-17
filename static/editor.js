@@ -3,13 +3,13 @@
 const GAME_NAME_REGEX = /^[a-zA-Z0-9]([-_. ]?[a-zA-Z0-9])*$/;
 const GAME_NAME_MAX_LENGTH = 64;
 
-let _state = { dirty: false, uploading: false, manifest: {} };
+let _state = { dirty: false, uploading: false, params: {} };
 
 window.onbeforeunload = function () { if (!_state.dirty) return null; return "Your work will be lost."; };
 
 window.onload = function () {
-	_state.manifest.lobby = __LOAD_CONFIG__.manifest?.lobby ?? '/bad_manifest';
-	_state.manifest.game = __LOAD_CONFIG__.manifest?.game ?? '/bad_manifest';
+	_state.params.lobby = __LOAD_PARAMS__?.lobby ?? '/bad_path';
+	_state.params.game = __LOAD_PARAMS__?.game ?? '/bad_path';
 
 	/* ensure phones handle the visibility of the keyboard properly */
 	if (window.visualViewport) {
@@ -116,7 +116,7 @@ _state.upload = function () {
 
 	/* post the result out */
 	_state.uploading = true;
-	fetch(`${_state.manifest.game}/${name}`, { method: 'POST', body: JSON.stringify(out), headers: { "Content-Type": 'application/json' } })
+	fetch(`${_state.params.game}/${name}`, { method: 'POST', body: JSON.stringify(out), headers: { "Content-Type": 'application/json' } })
 		.then(function (resp) {
 			/* redirect to the main page */
 			if (!resp.ok)
@@ -126,7 +126,7 @@ _state.upload = function () {
 			_state.dirty = false;
 			_state.uploading = false;
 
-			document.location = `${_state.manifest.lobby}?uploaded=${name}`;
+			document.location = `${_state.params.lobby}?uploaded=${name}`;
 		}).catch(function (e) {
 			/* post the error */
 			document.getElementById('error').classList.add('show');

@@ -6,11 +6,9 @@
 		<div class="dialog">
 			<div class="caption">Dimensions</div>
 			<div style="display: flex; flex-direction: row; margin: 15px;">
-				<input type="number" placeholder="Width" id="width"
-					style="width: 150px; font-size: 1.3em; padding: 4px;" min="1" max="64" value="15">
+				<input type="number" placeholder="Width" id="width" autocomplete="off" style="width: 150px; font-size: 1.3em; padding: 4px;" min="1" max="64" value="15">
 				<div style="font-size: 1.75em; padding: 0px 10px 5px 10px;">&times;</div>
-				<input type="number" placeholder="Height" id="height"
-					style="width: 150px; font-size: 1.3em; padding: 4px;" min="1" max="64" value="15">
+				<input type="number" placeholder="Height" id="height" autocomplete="off" style="width: 150px; font-size: 1.3em; padding: 4px;" min="1" max="64" value="15">
 			</div>
 			<div class="confirm">
 				<div class="button" style="width: 150px;" onclick="_state.setup()">Create</div>
@@ -43,7 +41,7 @@
 		<div class="dialog">
 			<div class="caption">Upload Crossword</div>
 			<div style="margin: 15px;">
-				<input placeholder="Name" id="name" style="width: 350px; font-size: 1.3em; padding: 4px;">
+				<input placeholder="Name" id="name" autocomplete="off" style="width: 350px; font-size: 1.3em; padding: 4px;">
 			</div>
 			<div id="error" class="error" style="margin: 0px 15px 15px 15px;">Error Message</div>
 			<div style="margin: 0px 15px 15px 15px; font-size: 0.75em;">Note: Uploaded crosswords cannot be modified
