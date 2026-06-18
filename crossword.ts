@@ -827,13 +827,25 @@ export class Crossword extends mws.ModuleHandler {
 
 		/* check if a game is being manipulated (entire endpoint is owned) */
 		if (client.isInsideOf(Endpoints.game)) {
-			const name = decodeURIComponent(mws.childPath(Endpoints.game, client.path).substring(1));
+			let name = '';
+			try { name = decodeURIComponent(mws.childPath(Endpoints.game, client.path).substring(1)); }
+			catch (err: any) {
+				client.error(`Bad URI encoding for name encountered: ${err.message}`);
+				return client.respondBadRequest('Bad URI encoding');
+			}
 			return this.modifyGame(client, params, name);
 		}
 
 		/* check if a websocket is created (entire endpoint is owned) */
 		if (client.isInsideOf(Endpoints.sockets)) {
-			const name = decodeURIComponent(mws.childPath(Endpoints.sockets, client.path).substring(1));
+			let name = '';
+
+			try { name = decodeURIComponent(mws.childPath(Endpoints.sockets, client.path).substring(1)); }
+			catch (err: any) {
+				client.error(`Bad URI encoding for name encountered: ${err.message}`);
+				return client.respondBadRequest('Bad URI encoding');
+			}
+
 			if (!name.match(GAME_NAME_REGEX) || name.length > GAME_NAME_MAX_LENGTH)
 				return client.respondNotFound();
 
