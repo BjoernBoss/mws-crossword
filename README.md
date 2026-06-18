@@ -16,7 +16,7 @@ Requires Node.js 22 or later.
 
 ## Setup
 
-The `Crossword` module takes a data directory path and an optional `Access` object controlling what operations clients may perform. Mount it under a path using `dispatch`:
+The `Crossword` module takes a data directory path and an optional `Params` object controlling what operations clients may perform. Mount it under a path using `dispatch`:
 
 ```typescript
 import { Server, dispatch, addLogger, createConsoleLogger } from "@bjoernboss/mws";
@@ -39,9 +39,9 @@ The module serves its own pages, static assets, and WebSocket endpoints from its
 
 Important: The module caches the loaded games in memory. The same data directory should therefore not be used by multiple `Crossword` modules simultaneously.
 
-## Access Control
+## Parameters
 
-The `Access` object controls which operations are allowed. All default to `false`, so at minimum `query` and `edit` should be enabled for a functional game:
+The `Params` object controls module behavior and access. All fields are optional:
 
 | Field | Default | Description |
 |---|---|---|
@@ -49,8 +49,9 @@ The `Access` object controls which operations are allowed. All default to `false
 | `create` | `false` | Create new crossword puzzles via the editor |
 | `delete` | `false` | Delete existing crossword puzzles |
 | `edit` | `false` | Modify game cells and set player names via WebSocket |
+| `lifetime` | `86400000` (24h) | Cookie lifetime in milliseconds |
 
-Access can also be granted per-request through `params` when dispatching to the module. Request parameter override the corresponding default, allowing parent modules to implement authentication or per-route access policies.
+At minimum `query` and `edit` should be enabled for a functional game. Parameters can also be set per-request through `params` when dispatching to the module. Request parameter override the corresponding default, allowing parent modules to implement authentication or per-route access policies.
 
 ## Endpoints
 
@@ -119,4 +120,4 @@ If a writeback fails, the game state notifies all connected clients via the `fai
 
 ## Cookies
 
-The play page stores the last used player name in a cookie (`crossword-last-name`, 24-hour lifetime) so it can be pre-filled on the next visit.
+The `Cookies` export provides the cookie name constants used by the module. The play page stores the last used player name in a cookie (`crossword-last-name`, configurable lifetime, default 24 hours) so it can be pre-filled on the next visit.
