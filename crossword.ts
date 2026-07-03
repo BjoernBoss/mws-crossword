@@ -515,14 +515,14 @@ export class Crossword extends mws.ModuleHandler {
 
 		/* check if the client is allowed to create/delete */
 		if (!(method == 'POST' ? params.create : params.delete))
-			return client.respondForbidden(`Not allowed to ${method == 'POST' ? 'create' : 'delete'} crosswords`);
+			return client.respondForbidden({ reason: `Not allowed to ${method == 'POST' ? 'create' : 'delete'} crosswords` });
 
 		/* extract the name (respond with 400/404 on error, as this is a totally owned endpoint) */
 		if (!name.match(GAME_NAME_REGEX) || name.length > GAME_NAME_MAX_LENGTH) {
 			if (method == 'DELETE')
 				client.respondNotFound();
 			else
-				client.respondBadRequest('Malformed name');
+				client.respondBadRequest({ reason: 'Malformed name' });
 			return;
 		}
 		client.trace(`Handling Game: [${name}] with [${method}]`);
@@ -580,7 +580,7 @@ export class Crossword extends mws.ModuleHandler {
 		try {
 			if (!await this.cache.write(filePath, JSON.stringify(parsed), { what: 'crossword', create: true })) {
 				this.error(`Game file [${filePath}] already exists`);
-				return client.respondConflict('Already exists');
+				return client.respondConflict({ reason: 'Already exists' });
 			}
 			client.respondCreated(client.makePath(`/play?name=${encodeURIComponent(name)}`));
 		}
@@ -591,9 +591,11 @@ export class Crossword extends mws.ModuleHandler {
 		}
 	}
 	private async queryGames(client: mws.ClientRequest, params: BurntParams): Promise<void> {
-		/* check if the client is allowed to query */
+		/* check if the client is allowed to query and validate the method */
 		if (!params.query)
-			return client.respondForbidden('Not allowed to query crosswords');
+			return client.respondForbidden({ reason: 'Not allowed to query crosswords' });
+		if (client.requireMethod('GET') == null)
+			return;
 
 		/* read the current list of game files */
 		let content: string[] = [];
@@ -696,7 +698,7 @@ export class Crossword extends mws.ModuleHandler {
 	private async fetchBody(client: mws.ClientRequest, path: string): Promise<string | null> {
 		const fullPath = this.fileAssets(path);
 
-		/* look for the file (will never be an immutable path) */
+		/* look for the file */
 		try {
 			const data: Buffer | null = await this.cache.read(fullPath);
 			if (data == null) {
@@ -714,9 +716,11 @@ export class Crossword extends mws.ModuleHandler {
 		return client.makePath(this.cache.immutable(this.name, mws.joinSanitized(Endpoints.static, path)));
 	}
 	private async buildLobbyPage(client: mws.ClientRequest, params: BurntParams): Promise<void> {
-		/* check if the client is allowed to query */
+		/* check if the client is allowed to query and validate the method */
 		if (!params.query)
-			return client.respondForbidden('Not allowed to query crosswords');
+			return client.respondForbidden({ reason: 'Not allowed to query crosswords' });
+		if (client.requireMethod('GET') == null)
+			return;
 
 		/* read the body */
 		const body: string | null = await this.fetchBody(client, '/lobby.html');
@@ -749,6 +753,9 @@ export class Crossword extends mws.ModuleHandler {
 		await client.respondHtml(page, { status: mws.Status.Ok });
 	}
 	private async buildPlayPage(client: mws.ClientRequest, params: BurntParams): Promise<void> {
+		if (client.requireMethod('GET') == null)
+			return;
+
 		/* read the body */
 		const body: string | null = await this.fetchBody(client, '/play.html');
 		if (body == null)
@@ -783,9 +790,11 @@ export class Crossword extends mws.ModuleHandler {
 		await client.respondHtml(page, { status: mws.Status.Ok });
 	}
 	private async buildEditorPage(client: mws.ClientRequest, params: BurntParams): Promise<void> {
-		/* check if the client is allowed to edit */
+		/* check if the client is allowed to edit and validate the method */
 		if (!params.create)
-			return client.respondForbidden('Not allowed to create crosswords');
+			return client.respondForbidden({ reason: 'Not allowed to create crosswords' });
+		if (client.requireMethod('GET') == null)
+			return;
 
 		/* read the body */
 		const body: string | null = await this.fetchBody(client, '/editor.html');
@@ -828,10 +837,10 @@ export class Crossword extends mws.ModuleHandler {
 		/* check if a game is being manipulated (entire endpoint is owned) */
 		if (client.isInsideOf(Endpoints.game)) {
 			let name = '';
-			try { name = decodeURIComponent(mws.childPath(Endpoints.game, client.path).substring(1)); }
+			try { name = decodeURIComponent(client.getChildPath(Endpoints.game).substring(1)); }
 			catch (err: any) {
 				client.error(`Bad URI encoding for name encountered: ${err.message}`);
-				return client.respondBadRequest('Bad URI encoding');
+				return client.respondBadRequest({ reason: 'Bad URI encoding' });
 			}
 			return this.modifyGame(client, params, name);
 		}
@@ -840,10 +849,10 @@ export class Crossword extends mws.ModuleHandler {
 		if (client.isInsideOf(Endpoints.sockets)) {
 			let name = '';
 
-			try { name = decodeURIComponent(mws.childPath(Endpoints.sockets, client.path).substring(1)); }
+			try { name = decodeURIComponent(client.getChildPath(Endpoints.sockets).substring(1)); }
 			catch (err: any) {
 				client.error(`Bad URI encoding for name encountered: ${err.message}`);
-				return client.respondBadRequest('Bad URI encoding');
+				return client.respondBadRequest({ reason: 'Bad URI encoding' });
 			}
 
 			if (!name.match(GAME_NAME_REGEX) || name.length > GAME_NAME_MAX_LENGTH)
@@ -856,10 +865,6 @@ export class Crossword extends mws.ModuleHandler {
 				await this.acceptWebSocket(ws, name, params);
 			return;
 		}
-
-		/* all other endpoints only support 'getting' */
-		if (client.requireMethod('GET') == null)
-			return;
 
 		/* check if the games are queried */
 		if (client.path == Endpoints.games)
@@ -874,8 +879,8 @@ export class Crossword extends mws.ModuleHandler {
 			return this.buildEditorPage(client, params);
 
 		/* check if its just static content to be served */
-		if (client.isInsideOf(Endpoints.static))
-			await client.tryRespondFile(this.fileStatic(mws.childPath(Endpoints.static, client.path)));
+		if (client.isInsideOf(Endpoints.static) && client.requireMethod('GET') != null)
+			await client.tryRespondFile(this.fileStatic(client.getChildPath(Endpoints.static)));
 	}
 	protected override async handleStop(): Promise<void> {
 		const list: Promise<void>[] = [];

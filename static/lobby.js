@@ -49,8 +49,8 @@ window.onload = function () {
 _state.loadList = function () {
 	fetch(_state.params.games)
 		.then(function (resp) {
-			if (resp.status != 200)
-				throw new Error(`Server responded with ${resp.status}`);
+			if (!resp.ok)
+				throw new Error(`Server responded with ${resp.statusText}`);
 			if (resp.headers.has('content-type') && !resp.headers.get('content-type').startsWith('application/json'))
 				throw new Error(`Server did not respond with json`);
 			return resp.json();
