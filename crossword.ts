@@ -467,13 +467,13 @@ export const Endpoints = {
 	/** endpoint for creating a game (requires Params.create) */
 	editor: '/editor',
 
-	/** directory for web-sockets (fully owned, auto-responds with 404; conditionally requires Params.edit) */
+	/** directory for web-sockets (conditionally requires Params.edit) */
 	sockets: '/ws',
 
 	/** endpoint to query the registered games (requires Params.query) */
 	games: '/games',
 
-	/** directory to manage a game (fully owned, auto-responds with 404; requires Params.create/Params.delete) */
+	/** directory to manage a game (requires Params.create/Params.delete) */
 	game: '/game'
 }
 

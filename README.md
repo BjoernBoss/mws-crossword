@@ -94,7 +94,7 @@ After an error identifier is sent, the server closes the WebSocket.
 
 ### Delta Encoding
 
-To minimize bandwidth, grid updates use delta encoding. Instead of transmitting the full grid on every change, only the modified cells are sent — both from client to server and from server to clients. Each cell in a delta carries an `index` field indicating its position in the linearized grid array (`x + y * width`).
+To minimize bandwidth, grid updates use delta encoding. Instead of transmitting the full grid on every change, only the modified cells are sent - both from client to server and from server to clients. Each cell in a delta carries an `index` field indicating its position in the linearized grid array (`x + y * width`).
 
 The server sends the full grid state (`delta: false`) on initial connection and uses delta messages (`delta: true`) for subsequent broadcasts. Non-grid changes (player joins, name changes, disconnects) are broadcast as empty deltas that only update the `online` list.
 
