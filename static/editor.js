@@ -5,7 +5,12 @@ const GAME_NAME_MAX_LENGTH = 64;
 
 let _state = { dirty: false, uploading: false, params: {} };
 
-window.onbeforeunload = function () { if (!_state.dirty) return null; return "Your work will be lost."; };
+window.onbeforeunload = function (e) {
+	if (!_state.dirty)
+		return null;
+	e.preventDefault();
+	return "keep";
+};
 
 window.onload = function () {
 	_state.params.lobby = __LOAD_PARAMS__?.lobby ?? '/bad_path';

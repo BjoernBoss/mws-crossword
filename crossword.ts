@@ -455,7 +455,7 @@ export const Cookies = {
  *	This mapping can be used to translate components of the module to different paths in the URL space.
  */
 export const Endpoints = {
-	/** directory containting static assets (sparsely used) */
+	/** directory containting static asset */
 	static: '/static',
 
 	/** endpoint for viewing the game lobby (requires Params.query) */
@@ -750,7 +750,7 @@ export class Crossword extends mws.ModuleHandler {
 			],
 			body: b.Embed(body, true)
 		});
-		await client.respondHtml(page, { status: mws.Status.Ok });
+		client.respondHtml(page, { status: mws.Status.Ok });
 	}
 	private async buildPlayPage(client: mws.ClientRequest, params: BurntParams): Promise<void> {
 		if (client.requireMethod('GET') == null)
@@ -787,7 +787,7 @@ export class Crossword extends mws.ModuleHandler {
 			],
 			body: b.Embed(body, true)
 		});
-		await client.respondHtml(page, { status: mws.Status.Ok });
+		client.respondHtml(page, { status: mws.Status.Ok });
 	}
 	private async buildEditorPage(client: mws.ClientRequest, params: BurntParams): Promise<void> {
 		/* check if the client is allowed to edit and validate the method */
@@ -821,7 +821,7 @@ export class Crossword extends mws.ModuleHandler {
 			],
 			body: b.Embed(body, true)
 		});
-		await client.respondHtml(page, { status: mws.Status.Ok });
+		client.respondHtml(page, { status: mws.Status.Ok });
 	}
 
 	protected override async handleRequest(client: mws.ClientRequest, raw?: mws.Params): Promise<void> {
