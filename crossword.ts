@@ -664,8 +664,15 @@ export class Crossword extends mws.ModuleHandler {
 				if (!params.edit)
 					client.error(`Received not allowed command [${parsed.cmd}]`);
 				else if (parsed.cmd == 'name' && typeof parsed.name == 'string') {
-					client.trace(`Received for socket: ${parsed.cmd} (${parsed.name})`);
-					game.updateName(client, parsed.name);
+					let name = JSON.stringify(parsed.name);
+					name = name.substring(1, name.length - 1);
+
+					if (name != name.trim() || name == '')
+						client.warning(`Ignoring invalid name [${name}]`);
+					else {
+						client.trace(`Received for socket: ${parsed.cmd} (${name})`);
+						game.updateName(client, parsed.name);
+					}
 				}
 				else if (parsed.cmd != 'update')
 					client.warning(`Received unknown command [${parsed.cmd}]`);
