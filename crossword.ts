@@ -590,23 +590,15 @@ export class Crossword extends mws.ModuleHandler {
 			client.respondInternalError(`Error while writing the game [${filePath}]: ${err.message}`);
 		}
 	}
-	private async queryGames(client: mws.ClientRequest, params: BurntParams): Promise<void> {
-		/* check if the client is allowed to query and validate the method */
-		if (!params.query)
-			return client.respondForbidden({ reason: 'Not allowed to query crosswords' });
-		if (client.requireMethod('GET') == null)
-			return;
-
+	private async fetchGameList(): Promise<string[] | null> {
 		/* read the current list of game files */
 		let content: string[] = [];
-		try {
-			content = await libFs.readdir(this.fileGames('.'));
-		}
+		try { content = await libFs.readdir(this.fileGames('.')); }
 		catch (err: any) {
-			client.respondInternalError(`Error while reading directory content: ${err.message}`);
-			return;
+			this.error(`Error fetching game list: ${err.message}`);
+			return null;
 		}
-		let out = [];
+		const out = [];
 
 		/* collect them all out */
 		this.trace(`Querying list of all registered games: [${content}]`);
@@ -618,9 +610,22 @@ export class Crossword extends mws.ModuleHandler {
 				continue;
 			out.push(actual);
 		}
+		return out;
+	}
+	private async queryGames(client: mws.ClientRequest, params: BurntParams): Promise<void> {
+		/* check if the client is allowed to query and validate the method */
+		if (!params.query)
+			return client.respondForbidden({ reason: 'Not allowed to query crosswords' });
+		if (client.requireMethod('GET') == null)
+			return;
+
+		/* read the current list of game files */
+		const list: string[] | null = await this.fetchGameList();
+		if (list == null)
+			return client.respondInternalError(`Failed to fetch game list`);;
 
 		/* return them to the request */
-		client.respond(JSON.stringify(out), { media: mws.Media.Json });
+		client.respond(JSON.stringify(list), { media: mws.Media.Json });
 	}
 	private async acceptWebSocket(client: mws.ClientSocket, name: string, params: BurntParams): Promise<void> {
 		client.trace(`Handling WebSocket to: [${name}]`);
@@ -727,9 +732,13 @@ export class Crossword extends mws.ModuleHandler {
 		if (body == null)
 			return;
 
+		/* fetch the initial game list (on errors, simply leave it empty, for the client to re-fetch and log the errors) */
+		const list: string[] | null = await this.fetchGameList();
+
 		const loadParams: string = JSON.stringify({
 			create: params.create,
 			delete: params.delete,
+			list,
 			games: client.makePath(Endpoints.games),
 			editor: client.makePath(Endpoints.editor),
 			play: client.makePath(Endpoints.play),
