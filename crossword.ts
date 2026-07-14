@@ -625,7 +625,7 @@ export class Crossword extends mws.ModuleHandler {
 			return client.respondInternalError(`Failed to fetch game list`);;
 
 		/* return them to the request */
-		client.respond(JSON.stringify(list), { media: mws.Media.Json });
+		client.respondJson(list);
 	}
 	private async acceptWebSocket(client: mws.ClientSocket, name: string, params: BurntParams): Promise<void> {
 		client.trace(`Handling WebSocket to: [${name}]`);
