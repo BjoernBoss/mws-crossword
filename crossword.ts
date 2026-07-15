@@ -578,15 +578,16 @@ export class Crossword extends mws.ModuleHandler {
 
 		/* serialize the data to the file and write it out */
 		try {
-			if (!await this.cache.write(filePath, JSON.stringify(parsed), { what: 'crossword', create: true })) {
-				this.error(`Game file [${filePath}] already exists`);
-				return client.respondConflict({ reason: 'Already exists' });
-			}
+			await this.cache.write(filePath, JSON.stringify(parsed), { what: 'crossword', create: true });
 			client.respondCreated(client.makePath(`/play?name=${encodeURIComponent(name)}`));
 		}
 
 		/* check why the creating failed and log it accordingly */
 		catch (err: any) {
+			if (err.code == 'EEXIST') {
+				this.error(`Game file [${filePath}] already exists`);
+				return client.respondConflict({ reason: 'Already exists' });
+			}
 			client.respondInternalError(`Error while writing the game [${filePath}]: ${err.message}`);
 		}
 	}
