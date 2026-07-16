@@ -455,7 +455,7 @@ export const Cookies = {
  *	This mapping can be used to translate components of the module to different paths in the URL space.
  */
 export const Endpoints = {
-	/** directory containting static asset */
+	/** directory containing static assets */
 	static: '/static',
 
 	/** endpoint for viewing the game lobby (requires Params.query) */
