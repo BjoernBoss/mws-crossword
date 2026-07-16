@@ -39,6 +39,32 @@ The module serves its own pages, static assets, and WebSocket endpoints from its
 
 Important: The module caches the loaded games in memory. The same data directory should therefore not be used by multiple `Crossword` modules simultaneously.
 
+## Frontend
+
+The module ships with a complete browser frontend across its three pages. Operations not permitted by the configured parameters are hidden from the UI.
+
+### Lobby
+
+- Lists all crosswords alphabetically, each linking to its play page; fetch failures show an error notification with a reload button.
+- Creating (link to the editor) and deleting are only offered when permitted; deletion requires a confirmation dialog and cannot be undone.
+
+### Editor
+
+- Grid dimensions are chosen on startup (1x1 to 64x64); solid cells are then painted by clicking and dragging with the mouse, or by touch on mobile.
+- Crossword numbers are assigned automatically and re-rendered live while painting.
+- Finishing asks for a game name (validated client-side against the naming rules) and uploads the layout; navigating away with unsaved changes is guarded by a confirmation prompt.
+
+### Play
+
+- Players join by name - pre-filled from the cookie - or as passive watchers; watch mode is entered automatically when editing is not permitted.
+- Focusing a cell highlights the whole word and smoothly zooms and pans the view to frame it; Escape resets the view to the full grid.
+- Keyboard support: typed letters advance along the current direction, arrow keys navigate while skipping solid cells, Tab or Space toggles between horizontal and vertical, and Backspace clears or steps back.
+- Letters can be marked as uncertain guesses - via the Guess button or by holding Shift - and are rendered distinctly until confirmed.
+- Every author is assigned a distinct color (hues spread for maximum separation): grid cells are tinted with their author's color, and a player list shows all authors with their online status.
+- Concurrent editing is conflict-safe on the client as well: local changes are sent as acknowledged deltas, and unacknowledged local edits are never overwritten by remote updates and are re-pushed after reconnects.
+- Lost connections are retried automatically and otherwise reported through a notification with a reload button; server-side save failures are surfaced to all players.
+- On-screen keyboards on mobile are handled by resizing the layout to the visual viewport, in both the editor and the play page.
+
 ## Parameters
 
 The `Params` object controls module behavior and access. All fields are optional:
@@ -67,32 +93,6 @@ The `Endpoints` export provides the path constants used by the module. All paths
 | `/game/{name}` | DELETE | Delete an existing game |
 | `/static/*` | GET | Static assets (CSS, JS) served with immutable cache headers |
 | `/ws/{name}` | WebSocket | Join a game session |
-
-## Frontend
-
-The module ships with a complete browser frontend across its three pages. Operations not permitted by the effective parameters are hidden from the UI.
-
-### Lobby
-
-- Lists all crosswords alphabetically, each linking to its play page; fetch failures show an error notification with a reload button.
-- Creating (link to the editor) and deleting are only offered when permitted; deletion requires a confirmation dialog and cannot be undone.
-
-### Editor
-
-- Grid dimensions are chosen on startup (1x1 to 64x64); solid cells are then painted by clicking and dragging with the mouse, or by touch on mobile.
-- Crossword numbers are assigned automatically and re-rendered live while painting.
-- Finishing asks for a game name (validated client-side against the naming rules) and uploads the layout; navigating away with unsaved changes is guarded by a confirmation prompt.
-
-### Play
-
-- Players join by name - pre-filled from the cookie - or as passive watchers; watch mode is entered automatically when editing is not permitted.
-- Focusing a cell highlights the whole word and smoothly zooms and pans the view to frame it; Escape resets the view to the full grid.
-- Keyboard support: typed letters advance along the current direction, arrow keys navigate while skipping solid cells, Tab or Space toggles between horizontal and vertical, and Backspace clears or steps back.
-- Letters can be marked as uncertain guesses - via the Guess button or by holding Shift - and are rendered distinctly until confirmed.
-- Every author is assigned a distinct color (hues spread for maximum separation): grid cells are tinted with their author's color, and a player list shows all authors with their online status.
-- Concurrent editing is conflict-safe on the client as well: local changes are sent as acknowledged deltas, and unacknowledged local edits are never overwritten by remote updates and are re-pushed after reconnects.
-- Lost connections are retried automatically and otherwise reported through a notification with a reload button; server-side save failures are surfaced to all players.
-- On-screen keyboards on mobile are handled by resizing the layout to the visual viewport, in both the editor and the play page.
 
 ## WebSocket Protocol
 
