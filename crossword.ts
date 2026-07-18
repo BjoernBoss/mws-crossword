@@ -579,7 +579,7 @@ export class Crossword extends mws.ModuleHandler {
 		/* serialize the data to the file and write it out */
 		try {
 			await this.cache.write(filePath, JSON.stringify(parsed), { what: 'crossword', create: true });
-			client.respondCreated(client.makePath(`/play?name=${encodeURIComponent(name)}`));
+			client.respondCreated(`${client.makePath('/play')}?name=${encodeURIComponent(name)}`);
 		}
 
 		/* check why the creating failed and log it accordingly */
@@ -726,7 +726,7 @@ export class Crossword extends mws.ModuleHandler {
 		}
 	}
 	private staticPath(client: mws.ClientRequest, path: string): string {
-		return client.makePath(this.cache.immutable(this.name, mws.joinSanitized(Endpoints.static, path)));
+		return client.makeImmutable(this.name, mws.joinSanitized(Endpoints.static, path));
 	}
 	private async buildLobbyPage(client: mws.ClientRequest, params: BurntParams): Promise<void> {
 		/* check if the client is allowed to query and validate the method */
