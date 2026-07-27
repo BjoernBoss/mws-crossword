@@ -25,16 +25,12 @@ window.onload = function () {
 	}
 
 	/* check if a notification is to be shown */
-	let name = new URLSearchParams(document.location.search).get('uploaded');
-	if (name != null)
+	let name = new URLSearchParams(window.location.search).get('uploaded');
+	if (name != null) {
 		PushNotification(`Crossword [${name}] uploaded!`, false, null);
 
-	/* patch the history to prevent the banner from being shown again */
-	if (window.history.replaceState) {
-		let url = `${document.location.protocol}//${window.location.host}${window.location.pathname}`;
-		if (window.location.pathname.endsWith('/') && window.location.pathname != '/')
-			url = url.slice(0, url.length - 1);
-		window.history.replaceState({}, document.title, url);
+		/* patch the history to prevent the banner from being shown again */
+		window.history.replaceState({}, '', `${window.location.protocol}//${window.location.host}${window.location.pathname}`);
 	}
 
 	/* register handle to cancel dialogs */

@@ -1,8 +1,8 @@
 /* SPDX-License-Identifier: BSD-3-Clause */
 /* Copyright (c) 2025-2026 Bjoern Boss Henrichsen */
 class SyncSocket {
-	static MaxNumberOfConnectAttempts = 2;
-	static ConnectDelayMs = 250;
+	static MAX_NUMBER_OF_ATTEMPTS = 2;
+	static CONNECT_DELAY_MS = 250;
 
 	constructor(path) {
 		this._ws = null;
@@ -29,8 +29,15 @@ class SyncSocket {
 		*	connecting: currently trying to establish connection
 		*	ready: connection ready and able to receive response
 		*	failed: failed and not retrying
+		*	hidden: failed due to being hidden; but silently retrying on becoming visible again
 		*/
 		this._state = 'connecting';
+
+		/* register the visibility-change listener */
+		document.addEventListener('visibilitychange', () => {
+			if (!document.hidden && this._state == 'hidden')
+				this._establish();
+		});
 
 		/* construct the url for the web-socket */
 		let protocol = (location.protocol == 'https:' ? 'wss' : 'ws');
@@ -104,7 +111,10 @@ class SyncSocket {
 		this._ws.onmessage = (m) => this._received(m);
 		this._ws.onclose = () => {
 			console.error(`Connection to remote lost [${this._url}]`);
-			this._failed(true);
+			if (document.hidden)
+				this._state = 'hidden';
+			else
+				this._failed(true);
 		};
 		this._ws.onopen = () => {
 			console.log(`Connection established to [${this._url}]`);
@@ -120,7 +130,12 @@ class SyncSocket {
 			/* handle the queue */
 			this._handleQueue();
 		};
-		this._ws.onerror = () => this._failed(false);
+		this._ws.onerror = () => {
+			if (document.hidden)
+				this._state = 'hidden';
+			else
+				this._failed(false);
+		};
 	}
 	_failed(fastRetry) {
 		this._killSocket();
@@ -134,9 +149,9 @@ class SyncSocket {
 		/* check if this was the final try or if another try should be queued */
 		if (this._state == 'failed')
 			return;
-		if (this._connectAttempts < SyncSocket.MaxNumberOfConnectAttempts) {
+		if (this._connectAttempts < SyncSocket.MAX_NUMBER_OF_ATTEMPTS) {
 			this._state = 'connecting';
-			setTimeout(() => this._establish(), SyncSocket.ConnectDelayMs);
+			setTimeout(() => this._establish(), SyncSocket.CONNECT_DELAY_MS);
 			return;
 		}
 
@@ -157,13 +172,7 @@ class SyncSocket {
 		ws.onmessage = null;
 		ws.onclose = null;
 		ws.onerror = null;
-		if (ws.readyState == WebSocket.OPEN)
-			try { ws.close(); } catch (_) { }
-		else {
-			ws.onopen = function () {
-				try { ws.close(); } catch (_) { }
-			};
-		}
+		try { ws.close(); } catch (_) { }
 	}
 	_fatal(msg) {
 		this._killSocket();
