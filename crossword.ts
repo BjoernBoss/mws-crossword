@@ -486,6 +486,7 @@ export class Crossword extends mws.ModuleHandler {
 	private fileGames: (path: string) => string;
 	private gameStates: Record<string, ActiveGame>;
 	private defaultParams: BurntParams;
+	private router?: mws.Router<BurntParams>;
 
 	/**
 	 *	[dataPath] describes the directory, which contains all of the games.
@@ -614,11 +615,9 @@ export class Crossword extends mws.ModuleHandler {
 		return out;
 	}
 	private async queryGames(client: mws.ClientRequest, params: BurntParams): Promise<void> {
-		/* check if the client is allowed to query and validate the method */
+		/* check if the client is allowed to query */
 		if (!params.query)
 			return client.respondForbidden({ reason: 'Not allowed to query crosswords' });
-		if (client.requireMethod('GET') == null)
-			return;
 
 		/* read the current list of game files */
 		const list: string[] | null = await this.fetchGameList();
@@ -729,11 +728,9 @@ export class Crossword extends mws.ModuleHandler {
 		return client.makeImmutable(this.name, mws.joinSanitized(Endpoints.static, path));
 	}
 	private async buildLobbyPage(client: mws.ClientRequest, params: BurntParams): Promise<void> {
-		/* check if the client is allowed to query and validate the method */
+		/* check if the client is allowed to query */
 		if (!params.query)
 			return client.respondForbidden({ reason: 'Not allowed to query crosswords' });
-		if (client.requireMethod('GET') == null)
-			return;
 
 		/* read the body */
 		const body: string | null = await this.fetchBody(client, '/lobby.html');
@@ -770,9 +767,6 @@ export class Crossword extends mws.ModuleHandler {
 		client.respondHtml(page, { status: mws.Status.Ok });
 	}
 	private async buildPlayPage(client: mws.ClientRequest, params: BurntParams): Promise<void> {
-		if (client.requireMethod('GET') == null)
-			return;
-
 		/* read the body */
 		const body: string | null = await this.fetchBody(client, '/play.html');
 		if (body == null)
@@ -807,11 +801,9 @@ export class Crossword extends mws.ModuleHandler {
 		client.respondHtml(page, { status: mws.Status.Ok });
 	}
 	private async buildEditorPage(client: mws.ClientRequest, params: BurntParams): Promise<void> {
-		/* check if the client is allowed to edit and validate the method */
+		/* check if the client is allowed to edit */
 		if (!params.create)
 			return client.respondForbidden({ reason: 'Not allowed to create crosswords' });
-		if (client.requireMethod('GET') == null)
-			return;
 
 		/* read the body */
 		const body: string | null = await this.fetchBody(client, '/editor.html');
@@ -841,6 +833,16 @@ export class Crossword extends mws.ModuleHandler {
 		client.respondHtml(page, { status: mws.Status.Ok });
 	}
 
+	private async routeSocket(client: mws.ClientRequest, params: BurntParams, name: string): Promise<void> {
+		if (!name.match(GAME_NAME_REGEX) || name.length > GAME_NAME_MAX_LENGTH)
+			return client.respondNotFound();
+
+		/* try to accept the web socket and handle it (await acceptance to ensure the
+		*	stop method is not entered before the full accept has been performed) */
+		const ws = await client.acceptWebSocket();
+		if (ws != null)
+			await this.acceptWebSocket(ws, name, params);
+	}
 	protected override async handleRequest(client: mws.ClientRequest, raw?: mws.Params): Promise<void> {
 		const params: BurntParams = {
 			query: (typeof raw?.query == 'boolean' ? raw : this.defaultParams).query,
@@ -851,53 +853,20 @@ export class Crossword extends mws.ModuleHandler {
 		};
 		client.trace(`Request handler for [${client.path}] (Q: ${params.query} | E: ${params.edit} | D: ${params.delete} | C: ${params.create} | lifetime: ${params.lifetime})`);
 
-		/* check if a game is being manipulated (entire endpoint is owned) */
-		if (client.isInsideOf(Endpoints.game)) {
-			let name = '';
-			try { name = decodeURIComponent(client.getChildPath(Endpoints.game).substring(1)); }
-			catch (err: any) {
-				client.error(`Bad URI encoding for name encountered: ${err.message}`);
-				return client.respondBadRequest({ reason: 'Bad URI encoding' });
-			}
-			return this.modifyGame(client, params, name);
-		}
+		/* check if the routing of the endpoints needs to be constructed */
+		if (this.router == null) this.router = mws.makeRouter<BurntParams>([
+			{ method: 'POST', pattern: `${Endpoints.game}/:name`, target: (client, args, params) => this.modifyGame(client, params, args.name) },
+			{ method: 'DELETE', pattern: `${Endpoints.game}/:name`, target: (client, args, params) => this.modifyGame(client, params, args.name) },
+			{ method: '*', pattern: `${Endpoints.sockets}/:name`, target: (client, args, params) => this.routeSocket(client, params, args.name) },
+			{ method: 'GET', pattern: Endpoints.games, target: (client, _, params) => this.queryGames(client, params) },
+			{ method: 'GET', pattern: Endpoints.lobby, target: (client, _, params) => this.buildLobbyPage(client, params) },
+			{ method: 'GET', pattern: Endpoints.play, target: (client, _, params) => this.buildPlayPage(client, params) },
+			{ method: 'GET', pattern: Endpoints.editor, target: (client, _, params) => this.buildEditorPage(client, params) },
+			{ method: 'GET', pattern: `${Endpoints.static}/+file`, target: async (client, args) => { await client.tryRespondFile(this.fileStatic(args.file)); } }
+		]);
 
-		/* check if a websocket is created (entire endpoint is owned) */
-		if (client.isInsideOf(Endpoints.sockets)) {
-			let name = '';
-
-			try { name = decodeURIComponent(client.getChildPath(Endpoints.sockets).substring(1)); }
-			catch (err: any) {
-				client.error(`Bad URI encoding for name encountered: ${err.message}`);
-				return client.respondBadRequest({ reason: 'Bad URI encoding' });
-			}
-
-			if (!name.match(GAME_NAME_REGEX) || name.length > GAME_NAME_MAX_LENGTH)
-				return client.respondNotFound();
-
-			/* try to accept the web socket and handle it (await acceptance to ensure the
-			*	stop method is not entered before the full accept has been performed) */
-			const ws = await client.acceptWebSocket();
-			if (ws != null)
-				await this.acceptWebSocket(ws, name, params);
-			return;
-		}
-
-		/* check if the games are queried */
-		if (client.path == Endpoints.games)
-			return this.queryGames(client, params);
-
-		/* check if its one of the primary endpoints and build them dynamically */
-		if (client.path == Endpoints.lobby)
-			return this.buildLobbyPage(client, params);
-		if (client.path == Endpoints.play)
-			return this.buildPlayPage(client, params);
-		if (client.path == Endpoints.editor)
-			return this.buildEditorPage(client, params);
-
-		/* check if its just static content to be served */
-		if (client.isInsideOf(Endpoints.static) && client.requireMethod('GET') != null)
-			await client.tryRespondFile(this.fileStatic(client.getChildPath(Endpoints.static)));
+		/* dispatch the request to the matching endpoint (requests not matching any route are automatically answered with not-found) */
+		await this.router(client, params);
 	}
 	protected override async handleStop(): Promise<void> {
 		const list: Promise<void>[] = [];
