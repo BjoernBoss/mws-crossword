@@ -41,29 +41,11 @@ Important: The module caches the loaded games in memory. The same data directory
 
 ## Frontend
 
-The module ships with a complete browser frontend across its three pages. Operations not permitted by the configured parameters are hidden from the UI.
+The module ships with a complete browser frontend across its three pages. Operations not permitted by the configured parameters are hidden from the UI. It consists of a lobby view, to manage the games themselves, and editor, to create new games, and the actual play screen.
 
-### Lobby
+The play screen supports keyboard shortcuts, and provides various UI/UX features for a nice crossword playing experience. It is also adapted for a proper mobile playing experience.
 
-- Lists all crosswords alphabetically, each linking to its play page; fetch failures show an error notification with a reload button.
-- Creating (link to the editor) and deleting are only offered when permitted; deletion requires a confirmation dialog and cannot be undone.
-
-### Editor
-
-- Grid dimensions are chosen on startup (1x1 to 64x64); solid cells are then painted by clicking and dragging with the mouse, or by touch on mobile.
-- Crossword numbers are assigned automatically and re-rendered live while painting.
-- Finishing asks for a game name (validated client-side against the naming rules) and uploads the layout; navigating away with unsaved changes is guarded by a confirmation prompt.
-
-### Play
-
-- Players join by name - pre-filled from the cookie - or as passive watchers; watch mode is entered automatically when editing is not permitted.
-- Focusing a cell highlights the whole word and smoothly zooms and pans the view to frame it; Escape resets the view to the full grid.
-- Keyboard support: typed letters advance along the current direction, arrow keys navigate while skipping solid cells, Tab or Space toggles between horizontal and vertical, and Backspace clears or steps back.
-- Letters can be marked as uncertain guesses - via the Guess button or by holding Shift - and are rendered distinctly until confirmed.
-- Every author is assigned a distinct color (hues spread for maximum separation): grid cells are tinted with their author's color, and a player list shows all authors with their online status.
-- Concurrent editing is conflict-safe on the client as well: local changes are sent as acknowledged deltas, and unacknowledged local edits are never overwritten by remote updates and are re-pushed after reconnects.
-- Lost connections are retried automatically and otherwise reported through a notification with a reload button; server-side save failures are surfaced to all players.
-- On-screen keyboards on mobile are handled by resizing the layout to the visual viewport, in both the editor and the play page.
+Gameplay of multiple simultaneous users is synchronized across devices and color coded.
 
 ## Parameters
 
@@ -137,12 +119,6 @@ Each cell carries a timestamp. When a client pushes an update, only cells with a
 - Unnamed players cannot update the grid
 - Crossword numbering is assigned automatically based on standard crossword conventions (a cell gets a number if it starts a horizontal or vertical word)
 - Max upload size: 100 KB
-
-## Persistence
-
-Games are stored as JSON files (`{name}.json`) in the data directory. Writebacks are debounced by 60 seconds after the last change. When all clients disconnect, any pending changes are flushed immediately before the game is unloaded from memory. A retention timer keeps the game loaded briefly after the last disconnect to handle quick reconnections.
-
-If a writeback fails, the game state notifies all connected clients via the `failed` flag. The server retries the writeback on the next debounce cycle. If all clients disconnect while the writeback is still failing, the in-memory state is lost and a warning is logged.
 
 ## Cookies
 
